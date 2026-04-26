@@ -1,8 +1,19 @@
 import { AppIcon } from '@/components/ui/icon';
 import { trpc } from '@/lib/trpc';
-import { ChevronRight, Search, Sparkles } from 'lucide-react';
+import {
+  Activity,
+  Cable,
+  ChevronRight,
+  Clock3,
+  FolderOpen,
+  GitBranch,
+  Search,
+  Sparkles,
+} from 'lucide-react';
 import type { DragEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { canAddNode, getNodeAccent, isGatewayUnavailableNodeType } from './node-types';
 import { CANVAS_RECIPES } from './presets';
 import { useCanvasStore } from './store';
@@ -17,6 +28,7 @@ function onDragStart(event: DragEvent<HTMLDivElement>, nodeType: string) {
 const DEFAULT_OPEN_CATEGORIES = new Set(['triggers', 'ai', 'control', 'ops']);
 
 export function Palette() {
+  const pathname = usePathname();
   const setNodeCatalog = useCanvasStore((state) => state.setNodeCatalog);
   const nodeCatalog = useCanvasStore((state) => state.nodeCatalog);
   const applyRecipe = useCanvasStore((state) => state.applyRecipe);
@@ -83,6 +95,14 @@ export function Palette() {
       }),
     );
   }, [catalog, localOnlyView]);
+
+  const dashboardLinks = [
+    { href: '/workspace', label: 'Workspace', icon: FolderOpen },
+    { href: '/cron', label: 'Cron Jobs', icon: Clock3 },
+    { href: '/channels', label: 'Channels', icon: Cable },
+    { href: '/automation', label: 'Automation', icon: GitBranch },
+    { href: '/ops', label: 'Ops', icon: Activity },
+  ];
 
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -245,6 +265,32 @@ export function Palette() {
                   </div>
                 )}
               </section>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="border-t border-[var(--color-border)] px-2 py-3">
+        <div className="mb-2 px-2 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+          Dashboard Menus
+        </div>
+        <div className="space-y-1">
+          {dashboardLinks.map((item) => {
+            const Icon = item.icon;
+            const active = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
+                  active
+                    ? 'bg-[var(--color-accent)] text-white'
+                    : 'text-gray-600 hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]'
+                }`}
+              >
+                <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
+                <span>{item.label}</span>
+              </Link>
             );
           })}
         </div>

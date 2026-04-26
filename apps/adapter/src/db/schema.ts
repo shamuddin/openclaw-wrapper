@@ -5,6 +5,17 @@ import type {
   AutomationTaskKind,
   AutomationTaskRole,
   ChannelProfile,
+  CronDelivery,
+  CronDeliveryStatus,
+  CronFailureAlert,
+  CronJobSource,
+  CronJobState,
+  CronRunStatus,
+  CronPayload,
+  CronRunTriggerMode,
+  CronSchedule,
+  CronSessionTarget,
+  CronWakeMode,
   GraphEdge,
   GraphNode,
   RunApprovalRequestStatus,
@@ -20,6 +31,7 @@ import type { DelegatedRunStatus } from '@openclaw-wrapper/schemas/run';
 import { relations, sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
+  boolean,
   index,
   integer,
   jsonb,
@@ -339,6 +351,83 @@ export const flowVersions = pgTable(
 
 export type FlowVersionRow = typeof flowVersions.$inferSelect;
 export type NewFlowVersionRow = typeof flowVersions.$inferInsert;
+
+export const cronJobs = pgTable(
+  'cron_jobs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    agentId: text('agent_id'),
+    sessionKey: text('session_key'),
+    clearAgent: boolean('clear_agent').notNull().default(false),
+    enabled: boolean('enabled').notNull().default(true),
+    deleteAfterRun: boolean('delete_after_run').notNull().default(false),
+    sourceType: text('source_type').$type<CronJobSource['kind'] | null>(),
+    sourceFlowId: uuid('source_flow_id').references(() => flows.id, { onDelete: 'cascade' }),
+    sourceFlowVersion: integer('source_flow_version'),
+    sourceNodeId: text('source_node_id'),
+    schedule: jsonb('schedule').$type<CronSchedule>().notNull(),
+    sessionTarget: text('session_target').$type<CronSessionTarget>().notNull(),
+    wakeMode: text('wake_mode').$type<CronWakeMode>().notNull(),
+    payload: jsonb('payload').$type<CronPayload>().notNull(),
+    delivery: jsonb('delivery').$type<CronDelivery | null>(),
+    failureAlert: jsonb('failure_alert').$type<CronFailureAlert | false | null>(),
+    timeoutSeconds: integer('timeout_seconds'),
+    state: jsonb('state').$type<CronJobState>().notNull().default(sql`'{}'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('cron_jobs_workspace_updated_at_idx').on(table.workspaceId, table.updatedAt),
+    index('cron_jobs_workspace_enabled_updated_at_idx').on(
+      table.workspaceId,
+      table.enabled,
+      table.updatedAt,
+    ),
+    index('cron_jobs_workspace_created_at_idx').on(table.workspaceId, table.createdAt),
+    index('cron_jobs_source_flow_idx').on(table.sourceFlowId, table.updatedAt),
+    uniqueIndex('cron_jobs_source_flow_node_idx').on(table.sourceFlowId, table.sourceNodeId),
+  ],
+);
+
+export type CronJobRow = typeof cronJobs.$inferSelect;
+export type NewCronJobRow = typeof cronJobs.$inferInsert;
+
+export const cronJobRuns = pgTable(
+  'cron_job_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    cronJobId: uuid('cron_job_id').references(() => cronJobs.id, { onDelete: 'set null' }),
+    jobName: text('job_name').notNull(),
+    triggerMode: text('trigger_mode').$type<CronRunTriggerMode>().notNull(),
+    status: text('status').$type<CronRunStatus>().notNull(),
+    summary: text('summary'),
+    error: text('error'),
+    sessionKey: text('session_key'),
+    deliveryStatus: text('delivery_status').$type<CronDeliveryStatus>(),
+    deliveryError: text('delivery_error'),
+    delivered: boolean('delivered'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    durationMs: integer('duration_ms'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('cron_job_runs_workspace_created_at_idx').on(table.workspaceId, table.createdAt),
+    index('cron_job_runs_job_created_at_idx').on(table.cronJobId, table.createdAt),
+    index('cron_job_runs_status_created_at_idx').on(table.status, table.createdAt),
+  ],
+);
+
+export type CronJobRunRow = typeof cronJobRuns.$inferSelect;
+export type NewCronJobRunRow = typeof cronJobRuns.$inferInsert;
 
 export const runs = pgTable(
   'runs',

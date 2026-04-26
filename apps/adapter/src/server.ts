@@ -2,8 +2,9 @@ import cors from '@fastify/cors';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify, { type FastifyReply } from 'fastify';
 import { startLiveChannelTriggerBridge } from './channel-trigger-bridge.js';
-import { startCronTriggerService } from './cron-trigger-service.js';
+import { startCronJobService } from './cron-job-service.js';
 import { getDb } from './db/client.js';
+import { reconcilePublishedFlowCronJobs } from './flow-cron-jobs.js';
 import { env } from './env.js';
 import {
   FLOW_TRIGGER_SECRET_HEADER,
@@ -476,7 +477,8 @@ async function main() {
   );
 
   startLiveChannelTriggerBridge({ db: getDb(), logger: app.log });
-  startCronTriggerService({ db: getDb(), logger: app.log });
+  await reconcilePublishedFlowCronJobs({ db: getDb(), logger: app.log });
+  startCronJobService({ db: getDb(), logger: app.log });
   startWaitResumeService({ db: getDb(), logger: app.log });
 
   await app.listen({ port: env.PORT, host: env.HOST });

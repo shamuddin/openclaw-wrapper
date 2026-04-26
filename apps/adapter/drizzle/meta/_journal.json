@@ -8,6 +8,27 @@
       "when": 1777148921503,
       "tag": "0000_mysterious_forge",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777215491554,
+      "tag": "0001_unknown_professor_monster",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777219983201,
+      "tag": "0002_spicy_khan",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777221671111,
+      "tag": "0003_long_umar",
+      "breakpoints": true
     }
   ]
 }

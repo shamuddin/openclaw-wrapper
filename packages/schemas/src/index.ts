@@ -2,6 +2,8 @@ import './formats.js';
 
 export * from './automation.js';
 export * from './channel.js';
+export * from './cron.js';
+export * from './cron-trigger.js';
 export * from './flow.js';
 export * from './execution.js';
 export * from './memory.js';

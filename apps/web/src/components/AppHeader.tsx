@@ -10,31 +10,19 @@ import { PromptDialog } from '@/components/ui/PromptDialog';
 import { notify } from '@/components/ui/toast-store';
 import { trpc } from '@/lib/trpc';
 import {
-  Activity,
-  Cable,
-  FolderOpen,
-  GitBranch,
   LogOut,
-  Network,
   Shield,
   Users,
 } from 'lucide-react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-
-function navClasses(active: boolean): string {
-  return active
-    ? 'border-transparent bg-[var(--color-accent)] text-white hover:brightness-110'
-    : 'border-[var(--color-border)] bg-[var(--color-surface)] text-gray-500 hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]';
-}
 
 export function AppHeader({
   current,
   title,
   subtitle,
 }: {
-  current: 'workspace' | 'builder' | 'channels' | 'automation' | 'ops';
+  current: 'workspace' | 'builder' | 'channels' | 'cron' | 'automation' | 'ops';
   title: string;
   subtitle: string;
 }) {
@@ -129,44 +117,6 @@ export function AppHeader({
             </div>
             <p className="truncate text-[11px] text-gray-400">{subtitle}</p>
           </div>
-        </div>
-
-        <div className="ml-6 hidden items-center gap-2 md:flex">
-          <Link
-            href="/workspace"
-            className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition ${navClasses(current === 'workspace')}`}
-          >
-            <FolderOpen className="h-3.5 w-3.5" strokeWidth={2} />
-            Workspace
-          </Link>
-          <Link
-            href="/builder"
-            className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition ${navClasses(current === 'builder')}`}
-          >
-            <Network className="h-3.5 w-3.5" strokeWidth={2} />
-            Builder
-          </Link>
-          <Link
-            href="/channels"
-            className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition ${navClasses(current === 'channels')}`}
-          >
-            <Cable className="h-3.5 w-3.5" strokeWidth={2} />
-            Channels
-          </Link>
-          <Link
-            href="/automation"
-            className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition ${navClasses(current === 'automation')}`}
-          >
-            <GitBranch className="h-3.5 w-3.5" strokeWidth={2} />
-            Automation
-          </Link>
-          <Link
-            href="/ops"
-            className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition ${navClasses(current === 'ops')}`}
-          >
-            <Activity className="h-3.5 w-3.5" strokeWidth={2} />
-            Ops
-          </Link>
         </div>
 
         <div className="ml-auto mr-3 flex items-center gap-2">

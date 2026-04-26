@@ -315,6 +315,11 @@ export interface OpenClawAgentRunInput {
   sessionKey: string;
   extraSystemPrompt?: string;
   model?: string;
+  thinking?: string;
+  fallbacks?: string[];
+  lightContext?: boolean;
+  allowUnsafeExternalContent?: boolean;
+  toolsAllow?: string[];
   idempotencyKey?: string;
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -1385,6 +1390,13 @@ export async function runOpenClawAgent(
       idempotencyKey: input.idempotencyKey,
       ...(input.extraSystemPrompt ? { extraSystemPrompt: input.extraSystemPrompt } : {}),
       ...(input.model ? { model: input.model } : {}),
+      ...(input.thinking ? { thinking: input.thinking } : {}),
+      ...(input.fallbacks?.length ? { fallbacks: input.fallbacks } : {}),
+      ...(input.lightContext !== undefined ? { lightContext: input.lightContext } : {}),
+      ...(input.allowUnsafeExternalContent !== undefined
+        ? { allowUnsafeExternalContent: input.allowUnsafeExternalContent }
+        : {}),
+      ...(input.toolsAllow?.length ? { toolsAllow: input.toolsAllow } : {}),
     },
     { signal: input.signal },
   );

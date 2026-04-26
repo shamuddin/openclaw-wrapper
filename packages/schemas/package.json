@@ -21,6 +21,16 @@
       "import": "./dist/channel.js",
       "default": "./dist/channel.js"
     },
+    "./cron": {
+      "types": "./dist/cron.d.ts",
+      "import": "./dist/cron.js",
+      "default": "./dist/cron.js"
+    },
+    "./cron-trigger": {
+      "types": "./dist/cron-trigger.d.ts",
+      "import": "./dist/cron-trigger.js",
+      "default": "./dist/cron-trigger.js"
+    },
     "./execution": {
       "types": "./dist/execution.d.ts",
       "import": "./dist/execution.js",

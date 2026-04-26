@@ -101,6 +101,56 @@ describe('runOpenClawAgent', () => {
     });
   });
 
+  it('forwards optional cron-style agent overrides when provided', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: 'accepted',
+        runId: 'gw_run_456',
+      })
+      .mockResolvedValueOnce({
+        runId: 'gw_run_456',
+        status: 'ok',
+      })
+      .mockResolvedValueOnce({
+        previews: [],
+      });
+
+    await runOpenClawAgent(
+      {
+        agentId: 'ops',
+        sessionKey: 'cron:ops-brief',
+        message: 'Prepare the brief.',
+        model: 'openai/gpt-5.2',
+        thinking: 'low',
+        fallbacks: ['openai/gpt-5.4-mini'],
+        lightContext: true,
+        allowUnsafeExternalContent: true,
+        toolsAllow: ['read', 'browser'],
+      },
+      { request } as never,
+    );
+
+    expect(request).toHaveBeenNthCalledWith(
+      1,
+      'agent',
+      {
+        agentId: 'ops',
+        sessionKey: 'cron:ops-brief',
+        message: 'Prepare the brief.',
+        deliver: false,
+        idempotencyKey: undefined,
+        model: 'openai/gpt-5.2',
+        thinking: 'low',
+        fallbacks: ['openai/gpt-5.4-mini'],
+        lightContext: true,
+        allowUnsafeExternalContent: true,
+        toolsAllow: ['read', 'browser'],
+      },
+      { signal: undefined },
+    );
+  });
+
   it('throws when the gateway reports an agent timeout', async () => {
     const request = vi
       .fn()

@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button';
 import { notify } from '@/components/ui/toast-store';
 import { trpc } from '@/lib/trpc';
 import { AlertTriangle, Trash2 } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
+import { CronNodePanel } from './CronNodePanel';
 import {
   type NodeConfigField,
   getNodeConfigFields,
@@ -261,6 +263,8 @@ export function NodeConfigPanel() {
     nodeCatalog,
     nodes,
     edges,
+    flowId,
+    publishedVersion,
     selectedNode,
     selectedEdge,
     updateNodeData,
@@ -271,6 +275,8 @@ export function NodeConfigPanel() {
       nodeCatalog: state.nodeCatalog,
       nodes: state.nodes,
       edges: state.edges,
+      flowId: state.flowId,
+      publishedVersion: state.publishedVersion,
       selectedNode: state.nodes.find((n) => n.selected) ?? null,
       selectedEdge: state.edges.find((e) => e.selected) ?? null,
       updateNodeData: state.updateNodeData,
@@ -493,7 +499,17 @@ export function NodeConfigPanel() {
           </div>
         )}
 
-        {fields.map((field) => {
+        {selectedNode.data.nodeType === 'trigger.cron' ? (
+          <CronNodePanel
+            selectedNode={{ id: selectedNode.id, data: selectedNode.data }}
+            flowId={flowId}
+            publishedVersion={publishedVersion}
+            updateNodeData={updateNodeData}
+          />
+        ) : null}
+
+        {selectedNode.data.nodeType !== 'trigger.cron' &&
+          fields.map((field) => {
           const inputId = `node-${selectedNode.id}-${field.key}`;
           const fieldOptions = resolveFieldOptions(field, selectedNode.data);
 
@@ -636,7 +652,7 @@ export function NodeConfigPanel() {
               )}
             </div>
           );
-        })}
+          })}
 
         <p className="text-[11px] text-gray-400">
           Press{' '}
