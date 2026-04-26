@@ -21,6 +21,19 @@ Design flows, manage channels, inspect runs, review approvals, and operate autom
 > **Note** — This repository is the **wrapper layer**, not the OpenClaw runtime itself.
 > OpenClaw remains the execution substrate and capability provider. This project adds the builder, persistence, workspace APIs, orchestration records, and operator-facing surfaces around it.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><strong>Workspace Dashboard</strong></td>
+    <td align="center"><strong>Flow Builder</strong></td>
+  </tr>
+  <tr>
+    <td><img src=".github/assets/workspace-dashboard.jpg" alt="Workspace Dashboard" width="100%"></td>
+    <td><img src=".github/assets/flow-builder.jpg" alt="Flow Builder" width="100%"></td>
+  </tr>
+</table>
+
 ## Highlights
 
 | | Feature | Description |
