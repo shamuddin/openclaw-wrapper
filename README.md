@@ -1,99 +1,159 @@
 # OpenClaw Wrapper
 
-Visual flow builder wrapping the OpenClaw gateway. Three-tier TypeScript monorepo:
+[![CI](https://github.com/shamuddin/openclaw-wrapper/actions/workflows/ci.yml/badge.svg)](https://github.com/shamuddin/openclaw-wrapper/actions/workflows/ci.yml)
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node >= 22.16.0](https://img.shields.io/badge/node-%3E%3D%2022.16.0-339933)](package.json)
+[![pnpm 9](https://img.shields.io/badge/pnpm-9-F69220)](https://pnpm.io/)
 
-- **`apps/web`** - Next.js 15 + React Flow canvas (Tier 1)
-- **`apps/adapter`** - Fastify + tRPC service; owns DB, workers, WS to gateway (Tier 2)
-- **OpenClaw gateway** - runs externally on `ws://127.0.0.1:18789` (Tier 3)
+**OpenClaw Wrapper** is a visual control plane for OpenClaw automations.
+It gives you a local-first workspace to design flows, manage channels, inspect runs, review approvals, and operate automations without talking directly to the gateway for every task.
 
-Shared TypeBox schemas in `packages/schemas` keep the wire format type-checked across tiers.
+This repository is the wrapper layer, not the OpenClaw runtime itself.
+OpenClaw remains the execution substrate and capability provider. This project adds the builder, persistence, workspace APIs, orchestration records, and operator-facing surfaces around it.
 
-## Project Status
+[Upstream OpenClaw](https://github.com/openclaw/openclaw) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md) | [Issues](https://github.com/shamuddin/openclaw-wrapper/issues)
 
-This repo is feature-rich enough for local and contributor use, but it is still being polished for a first public GitHub release.
+## Highlights
 
-What works well today:
+- **Visual flow builder** with a React Flow canvas, node palette, config panels, publish flow, and run inspection.
+- **Durable control plane** for flows, versions, runs, approvals, workspace state, automation ledgers, and memory records.
+- **Operator surfaces** for channels, automation, and ops instead of treating the canvas as the whole product.
+- **Local-first open-source mode** with `AUTH_MODE=disabled` so contributors can run the app without sign-in friction.
+- **Shared schema contracts** across web and adapter so builder and runtime data stay aligned.
+- **Plugin-ready architecture** with a node SDK, manifest-based extension surface, and catalog-driven node metadata.
 
-- workspace-first flow management
-- visual builder and run inspection
-- channels, automation, and ops surfaces
-- local open-source mode without sign-in
-- plugin and extension discovery
-- durable flow, run, approval, and workspace records
+## What This Repo Contains
 
-Known limitations:
+OpenClaw Wrapper is a three-layer TypeScript monorepo:
 
-- the wrapper depends on an external OpenClaw gateway
-- some runtime pairing and operational surfaces are still partial
-- flow execution still does not support cycles
-- browser and tool support is intentionally narrower than full browser automation
-- plugin lifecycle management is stronger on diagnostics than on operator controls
+- **`apps/web`**
+  Next.js 15 app for the workspace UI, builder, channels, automation, and ops views.
+- **`apps/adapter`**
+  Fastify + tRPC service that owns persistence, orchestration, auth mode behavior, gateway integration, and public trigger endpoints.
+- **External OpenClaw gateway**
+  Runs separately, usually on `ws://127.0.0.1:18789`, and handles upstream runtime work.
 
-## Open Source Modes
+The adapter is the real heart of the product. It owns the database, the run lifecycle, approval handling, waits/resume, automation records, and the gateway-facing runtime boundary.
 
-OpenClaw Wrapper supports two auth modes:
+## Main Surfaces
 
-- `AUTH_MODE=disabled`
-  Local open-source mode. No sign-in screen, a local owner identity is created automatically, and the app opens straight into the workspace.
-- `AUTH_MODE=required`
-  Team or hosted mode. Sign-in, sessions, invites, account management, and multi-user controls stay enabled.
-
-For local development and most open-source usage, the adapter defaults to `AUTH_MODE=disabled` unless `NODE_ENV=production`.
-
-## Upstream Reference
-
-OpenClaw Wrapper stays aligned with the upstream OpenClaw runtime surface area.
-When contributing new node families or runtime behavior, keep naming and concepts close to the upstream project where possible.
-
-## Product Roadmap
-
-- `Phase 1` - OSS/local-first onboarding and auth-optional startup
-- `Phase 2` - external plugin foundation for catalog-discovered nodes
-- `Phase 3` - memory platform parity
-- `Phase 4` - broader control-plane and ops surfaces
-- `Phase 5` - deeper automation parity with task and standing-order entry surfaces
-- `Phase 6` - mirrored task-flow registry and automation control-plane
-- `Phase 7` - durable run and task-flow cancellation
-- `Phase 8` - managed taskflow orchestration with child work, retries, and progression history
-- `Phase 9` - deeper agent and coordination parity with delegated lineage
-- `Phase 10` - richer tool, provider, and browser parity
-- `Phase 11` - channel, device, and runtime-node parity
-- `Phase 12` - plugin host maturity and OSS contributor polish
-
-Historical planning notes are kept out of the public repository for now.
+- **Builder**
+  Design, save, publish, and inspect automation flows.
+- **Channels**
+  Manage wrapper-owned channel profiles and view runtime channel state.
+- **Automation**
+  Review task-flow progression, retries, children, and managed automation history.
+- **Ops**
+  See gateway status, runtime inventory, approvals, activity, plugin diagnostics, and health signals.
 
 ## Quick Start
 
+Prerequisites:
+
+- Node `22.16.0` or newer
+- `pnpm` via Corepack
+- Docker for local Postgres + Redis
+- a running OpenClaw gateway
+
 ```bash
+corepack enable
 pnpm install
 cp apps/adapter/.env.example apps/adapter/.env
 cp apps/web/.env.example apps/web/.env.local
-
-# start local infra
 pnpm infra:up
-
-# apply checked-in database migrations
 pnpm db:migrate
-
-# run adapter and web in parallel
 pnpm dev
 ```
 
-Before starting the wrapper, make sure the upstream OpenClaw gateway is already running on `ws://127.0.0.1:18789` or update `GATEWAY_WS_URL` in `apps/adapter/.env`.
+Before starting the wrapper, make sure the OpenClaw gateway is already running on `ws://127.0.0.1:18789`, or update `GATEWAY_WS_URL` in `apps/adapter/.env`.
 
-Local infra intentionally binds to higher host ports by default:
+Then open `http://localhost:3000`.
 
-- Postgres: `127.0.0.1:55433`
-- Redis: `127.0.0.1:56379`
+Local default ports:
 
-That avoids collisions with machines that already have local database services on `5432` or `6379`.
+- Web: `3000`
+- Adapter: `4000`
+- Postgres: `55433`
+- Redis: `56379`
+- Gateway WebSocket: `18789`
 
-Then open `http://localhost:3000`:
+## Auth Modes
 
-- In local mode, the app should open directly into the workspace.
-- In team mode, you will see the sign-in/bootstrap flow.
+OpenClaw Wrapper supports two modes:
 
-The public repository currently ships the essential setup and governance docs only. If we publish a larger documentation set later, the README can link to it directly.
+- `AUTH_MODE=disabled`
+  Best for local development, OSS experimentation, and single-user setups. The app auto-creates a local owner and opens directly into the workspace.
+- `AUTH_MODE=required`
+  Best for team or hosted deployments. Sign-in, sessions, invites, and multi-user controls remain enabled.
+
+For local development, the adapter defaults to `AUTH_MODE=disabled` unless `NODE_ENV=production`.
+
+## Architecture
+
+### Web app
+
+- renders workspace surfaces
+- talks only to the adapter
+- manages builder UI and operator workflows
+
+### Adapter
+
+- owns database access
+- exposes tRPC APIs and trigger endpoints
+- persists flows, runs, approvals, memory, and automation records
+- executes published flows and coordinates waits/resume
+- connects to the OpenClaw gateway
+
+### OpenClaw gateway
+
+- provides upstream runtime, agents, skills, and channel capabilities
+- remains an external dependency
+
+## Repo Layout
+
+```text
+apps/
+  web/              Next.js workspace UI
+  adapter/          Fastify + tRPC + Drizzle + BullMQ runtime layer
+packages/
+  memory-sdk/       Shared memory query + status helpers
+  schemas/          Shared TypeBox wire schemas
+  openclaw-client/  WebSocket client wrapper with reconnect/backoff
+  node-sdk/         External plugin and node contract surface
+  tsconfig/         Shared tsconfig presets
+infra/
+  docker-compose.yml
+```
+
+## Scripts
+
+- `pnpm dev` - run adapter and web together
+- `pnpm build` - build the full workspace
+- `pnpm test` - run Vitest across packages
+- `pnpm typecheck` - run TypeScript checks across the monorepo
+- `pnpm lint` - run Biome checks
+- `pnpm infra:up` - start local Postgres and Redis
+- `pnpm infra:down` - stop local Postgres and Redis
+- `pnpm db:migrate` - apply checked-in adapter migrations
+- `pnpm db:generate` - generate a new migration after schema changes
+- `pnpm db:push` - push schema changes directly to a local database
+
+## Current Boundaries
+
+This repo is already useful for local and contributor workflows, but a few constraints are important:
+
+- the wrapper depends on an external OpenClaw gateway
+- some pairing and operational paths are still partial
+- published flow execution does not support cycles yet
+- browser and tool support is intentionally narrower than full browser automation
+- plugin management is currently stronger on discovery and diagnostics than on operator controls
+
+## Development Notes
+
+- Keep shared contracts aligned through `packages/schemas`.
+- Treat runtime concepts, workspace concepts, and canvas concepts as distinct on purpose.
+- Prefer durable records over transient in-memory orchestration behavior.
+- Keep new wrapper features conceptually close to upstream OpenClaw where possible.
 
 ## Governance
 
@@ -104,34 +164,3 @@ The public repository currently ships the essential setup and governance docs on
 - [CHANGELOG.md](CHANGELOG.md)
 
 OpenClaw Wrapper is released under the MIT License.
-
-## Layout
-
-```text
-apps/
-  web/              Next.js 15 canvas
-  adapter/          Fastify + tRPC + Drizzle + BullMQ
-packages/
-  memory-sdk/       Shared memory query + status helpers
-  schemas/          Shared TypeBox wire schemas
-  openclaw-client/  ws wrapper with reconnect/backoff
-  node-sdk/         FlowNode base class + external plugin manifest contract
-  tsconfig/         Shared tsconfig bases
-infra/
-  docker-compose.yml
-```
-
-## Scripts
-
-- `pnpm dev` - run adapter + web in parallel
-- `pnpm build` - build everything
-- `pnpm infra:up` - start local Postgres + Redis
-- `pnpm infra:down` - stop local Postgres + Redis
-- `pnpm db:migrate` - apply checked-in adapter database migrations
-- `pnpm db:generate` - generate a new migration after changing the adapter schema
-- `pnpm db:push` - directly push schema changes to a local database without migration history
-- `pnpm typecheck` - TS check across all packages
-- `pnpm lint` - Biome lint + format check
-- `pnpm test` - Vitest across packages
-
-Database and release workflow guidance is currently maintained outside the public repository.
