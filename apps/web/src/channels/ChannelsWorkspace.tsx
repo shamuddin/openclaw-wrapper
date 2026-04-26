@@ -438,6 +438,26 @@ export function ChannelsWorkspace() {
     },
   });
 
+  const testYouTubeMutation = trpc.channels.testYouTube.useMutation({
+    onSuccess(result) {
+      notify({
+        tone: 'success',
+        title: 'YouTube API ready',
+        message: result.sampleChannelTitle
+          ? `Resolved ${result.channelCount} channel(s), including ${result.sampleChannelTitle}.`
+          : `Resolved ${result.channelCount} channel(s).`,
+      });
+    },
+    onError(error) {
+      notify({
+        tone: 'error',
+        title: 'YouTube API test failed',
+        message: error.message,
+        durationMs: 6_000,
+      });
+    },
+  });
+
   const { channelRuntime: selectedChannelRuntime, exactRuntime: selectedRuntime } = useMemo(
     () => resolveRuntimeForDraft(runtimeChannels, draft?.channelType, draft?.accountId),
     [draft?.accountId, draft?.channelType, runtimeChannels],
@@ -1183,6 +1203,45 @@ export function ChannelsWorkspace() {
                         </div>
                       )}
 
+                      {selectedTemplate.id === 'youtube-data-api' && (
+                        <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-xs text-sky-800">
+                          <div>
+                            <div className="font-medium">Read-only YouTube cron context</div>
+                            <div className="mt-1">
+                              Save channel IDs or handles here, then choose the YouTube read-only
+                              tool preset on a Cron Schedule node. The scheduler will preload public
+                              channel and recent-video metadata into the agent prompt.
+                            </div>
+                          </div>
+                          <div className="rounded-lg border border-sky-200 bg-white/70 px-3 py-2 text-sky-700">
+                            API keys cannot access private account data or perform account actions.
+                            We can add OAuth later for private analytics, playlists, or uploads.
+                          </div>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              if (!draft.id) {
+                                notify({
+                                  tone: 'warning',
+                                  title: 'Save first',
+                                  message: 'Save the YouTube profile before testing the API key.',
+                                });
+                                return;
+                              }
+                              testYouTubeMutation.mutate({ id: draft.id });
+                            }}
+                            disabled={
+                              !draft.id || testYouTubeMutation.isPending || !canManageChannels
+                            }
+                          >
+                            <Play className="h-3.5 w-3.5" strokeWidth={2} />
+                            {testYouTubeMutation.isPending
+                              ? 'Testing YouTube...'
+                              : 'Test YouTube API'}
+                          </Button>
+                        </div>
+                      )}
+
                       {selectedTemplate.pairingMode === 'qr' &&
                         trim(draft.accountId).length > 0 &&
                         selectedChannelRuntime &&
@@ -1276,7 +1335,8 @@ export function ChannelsWorkspace() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                  {selectedTemplate.supportsTestSend && (
+                    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
                     <h2 className="text-sm font-semibold text-[var(--color-fg)]">Test send</h2>
                     <div className="mt-3 space-y-3">
                       <label className="block">
@@ -1348,6 +1408,7 @@ export function ChannelsWorkspace() {
                       </Button>
                     </div>
                   </div>
+                  )}
                 </div>
               </div>
 

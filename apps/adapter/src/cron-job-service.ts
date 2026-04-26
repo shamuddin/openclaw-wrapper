@@ -15,6 +15,7 @@ import { cronJobRuns, cronJobs, type CronJobRow } from './db/schema.js';
 import { executeRunInBackground, startPublishedFlowRun } from './run-service.js';
 import { getOpenClawClient, runOpenClawAgent } from './openclaw.js';
 import { isFlowManagedCronJob } from './flow-cron-jobs.js';
+import { buildYouTubeCronContext, toolsAllowRequestsYouTube } from './youtube-service.js';
 
 interface BridgeLogger {
   info?: (...args: unknown[]) => void;
@@ -710,13 +711,19 @@ async function executeCronJob(params: {
 
   const timeoutMs = getCronJobTimeoutMs(params.job);
   const idempotencyKey = `cron:${params.job.id}:${params.now.getTime()}`;
+  const youtubeContext = toolsAllowRequestsYouTube(payload.toolsAllow)
+    ? await buildYouTubeCronContext(params.db, params.job.workspaceId)
+    : undefined;
+  const contextualMessage = youtubeContext
+    ? `${message}\n\n---\n${youtubeContext}`
+    : message;
 
   if (shouldAwaitAgentTurn(params.job)) {
     const result = await runOpenClawAgent(
       {
         agentId: params.job.agentId?.trim() || 'main',
         sessionKey,
-        message,
+        message: contextualMessage,
         model: payload.model,
         thinking: payload.thinking,
         fallbacks: payload.fallbacks,
@@ -764,7 +771,7 @@ async function executeCronJob(params: {
     'sessions.send',
     {
       key: sessionKey,
-      message,
+      message: contextualMessage,
       ...(payload.thinking ? { thinking: payload.thinking } : {}),
       ...(timeoutMs ? { timeoutMs } : {}),
       idempotencyKey,
