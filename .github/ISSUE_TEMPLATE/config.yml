@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Security issue
-    url: ./SECURITY.md
-    about: Please do not file sensitive vulnerabilities as public issues.
+  - name: Security vulnerability
+    url: https://github.com/shamuddin/openclaw-wrapper/security/advisories/new
+    about: Report security issues privately. Do not file as a public issue.
+  - name: Questions and help
+    url: https://github.com/shamuddin/openclaw-wrapper/discussions
+    about: Ask questions, get help, or share ideas in Discussions.

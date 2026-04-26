@@ -1,0 +1,23 @@
+# Default owner for everything
+* @shamuddin
+
+# Core adapter logic
+apps/adapter/ @shamuddin
+
+# Web frontend
+apps/web/ @shamuddin
+
+# Shared schemas and contracts
+packages/schemas/ @shamuddin
+
+# Infrastructure and CI
+infra/ @shamuddin
+.github/ @shamuddin
+
+# Security-sensitive files
+SECURITY.md @shamuddin
+apps/adapter/src/auth-service.ts @shamuddin
+apps/adapter/src/secret-store.ts @shamuddin
+apps/adapter/src/flow-trigger-security.ts @shamuddin
+apps/adapter/src/access-control.ts @shamuddin
+apps/adapter/src/system-exec.ts @shamuddin

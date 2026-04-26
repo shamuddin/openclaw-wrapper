@@ -8,8 +8,34 @@ body:
     attributes:
       value: |
         Thanks for taking the time to report a bug.
+        Please include enough detail for someone else to reproduce the issue from a clean checkout.
 
-        Please include enough detail for someone else to reproduce the issue from a clean checkout or a normal local setup.
+  - type: dropdown
+    id: bug_type
+    attributes:
+      label: Bug type
+      description: Choose the category that best matches this report.
+      options:
+        - Behavior bug (incorrect output or state)
+        - Crash or hang
+        - Regression (worked before, now fails)
+        - Build or setup issue
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How badly does this affect your workflow?
+      options:
+        - Low (cosmetic or minor inconvenience)
+        - Medium (blocks a specific workflow)
+        - High (blocks most usage)
+        - Critical (data loss or security concern)
+    validations:
+      required: true
+
   - type: textarea
     id: summary
     attributes:
@@ -18,40 +44,71 @@ body:
       placeholder: A short description of the problem and the expected behavior.
     validations:
       required: true
+
   - type: textarea
     id: steps
     attributes:
       label: Steps to reproduce
       description: List the exact steps needed to reproduce the issue.
       placeholder: |
-        1. Start the local services
+        1. Start local services with `pnpm infra:up && pnpm dev`
         2. Open the workspace page
-        3. Create a flow
+        3. Create a new flow
         4. Observe the error
     validations:
       required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+      placeholder: The flow should have been created and shown in the list.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Include error messages if any.
+      placeholder: The page shows a blank screen and the console logs a 500 error from the adapter.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      description: The git commit SHA or version you're running.
+      placeholder: main @ abc1234
+    validations:
+      required: true
+
   - type: textarea
     id: environment
     attributes:
       label: Environment
       description: Share the environment details that matter for reproduction.
       placeholder: |
-        - OS:
-        - Node version:
-        - pnpm version:
-        - Browser:
-        - AUTH_MODE:
-        - Gateway setup:
+        - OS: Windows 11 / macOS 15 / Ubuntu 24.04
+        - Node: 22.16.0
+        - pnpm: 9.15.0
+        - Browser: Chrome 130
+        - AUTH_MODE: disabled
+        - Gateway: running on ws://127.0.0.1:18789
     validations:
       required: true
+
   - type: textarea
     id: logs
     attributes:
-      label: Logs or screenshots
-      description: Paste relevant output, stack traces, or screenshots.
+      label: Logs, screenshots, or recordings
+      description: Paste relevant output, stack traces, or attach screenshots.
       render: shell
+
   - type: textarea
     id: extra
     attributes:
       label: Additional context
-      description: Anything else that would help explain impact or scope.
+      description: Anything else that helps explain impact, scope, or workarounds.

@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest a product, developer-experience, or documentation improvement.
+description: Propose a new capability or improvement.
 title: "[Feature]: "
 labels:
   - enhancement
@@ -8,16 +8,17 @@ body:
     attributes:
       value: |
         Thanks for suggesting an improvement.
+        Helpful feature requests explain the **user problem first** and the implementation idea second.
 
-        Helpful feature requests explain the user problem first and the implementation idea second.
   - type: textarea
     id: problem
     attributes:
       label: Problem to solve
       description: What problem, workflow gap, or pain point are you trying to address?
-      placeholder: Describe the user or maintainer problem clearly.
+      placeholder: Describe the user or developer problem clearly.
     validations:
       required: true
+
   - type: textarea
     id: proposal
     attributes:
@@ -26,13 +27,58 @@ body:
       placeholder: Describe the behavior, UI, API, or workflow you want.
     validations:
       required: true
+
   - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered
-      description: What other approaches did you consider?
-  - type: textarea
+      description: What other approaches did you consider and why are they weaker?
+      placeholder: Describe alternative solutions or workarounds.
+
+  - type: dropdown
     id: scope
     attributes:
-      label: Scope and impact
-      description: Who benefits from this, and what part of the repo would it touch?
+      label: Affected area
+      description: Which part of the project would this touch?
+      multiple: true
+      options:
+        - Web UI / Canvas
+        - Adapter / API
+        - Schemas / Contracts
+        - Channels
+        - Flows / Runs
+        - Memory
+        - Auth / Workspaces
+        - Ops / Gateway
+        - Plugins / Extensions
+        - Documentation
+        - Infrastructure / CI
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: |
+        Who benefits from this? How often does the pain occur?
+        Include affected users, severity, frequency, and practical consequences.
+      placeholder: |
+        Affected: All users creating multi-step flows
+        Severity: Medium (workaround exists but is tedious)
+        Frequency: Every time a flow has more than 5 nodes
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or examples
+      description: Prior art, links, screenshots, mockups, or references.
+      placeholder: Comparable behavior in other tools, sample config, or screenshot of the current limitation.
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Constraints, backward compatibility notes, or anything else.
