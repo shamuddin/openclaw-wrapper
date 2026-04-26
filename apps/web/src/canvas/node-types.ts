@@ -7,6 +7,11 @@ import type {
   NodeConfigVisibilityRule,
   NodeTypeDescriptor,
 } from '@openclaw-wrapper/schemas';
+import {
+  getCronTriggerDisplaySchedule,
+  getCronTriggerScheduleKind,
+  getCronTriggerTimezone,
+} from '@openclaw-wrapper/schemas/cron-trigger';
 
 export type NodeConfigField = NodeConfigFieldDescriptor;
 export const GATEWAY_UNAVAILABLE_CAPABILITY_LABEL = 'Gateway connection currently unavailable';
@@ -68,9 +73,13 @@ const SUMMARY_BUILDERS: Record<string, SummaryBuilder> = {
     return filterSummary([`inbound ${channelType}`, routeKey ? `route: ${routeKey}` : '']);
   },
   'trigger.cron': (data) => {
-    const schedule = readString(data, 'schedule');
-    const timezone = readString(data, 'timezone');
-    return filterSummary([schedule ? `cron: ${schedule}` : '', timezone ? timezone : '']);
+    const schedule = getCronTriggerDisplaySchedule(data);
+    const scheduleKind = getCronTriggerScheduleKind(data);
+    const timezone = scheduleKind === 'cron' ? getCronTriggerTimezone(data) : undefined;
+    return filterSummary([
+      schedule ? `${scheduleKind === 'cron' ? 'cron' : scheduleKind}: ${schedule}` : '',
+      timezone ? timezone : '',
+    ]);
   },
   'trigger.hook': (data) => {
     const hookName = readString(data, 'hookName');

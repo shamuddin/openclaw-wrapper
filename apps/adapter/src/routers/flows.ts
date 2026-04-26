@@ -18,6 +18,10 @@ import {
   rotateFlowTriggerSecret,
 } from '../flow-trigger-security.js';
 import {
+  deletePublishedFlowCronJobs,
+  syncPublishedFlowCronJobs,
+} from '../flow-cron-jobs.js';
+import {
   getExecModeAllowedFamilies,
   getExecModeAllowedPrefixes,
   matchesAllowedFamily,
@@ -27,6 +31,7 @@ import {
 } from '../system-exec.js';
 import { router, workspaceProcedure } from '../trpc.js';
 import { parse } from '../validate.js';
+import type { Db } from '../db/client.js';
 
 const Uuid = Type.String({ format: 'uuid', minLength: 36, maxLength: 36 });
 
@@ -442,6 +447,14 @@ export const flowsRouter = router({
         .set({ publishedVersion: draft.version })
         .where(and(eq(flows.id, draft.id), eq(flows.workspaceId, ctx.workspace.id)));
 
+      await syncPublishedFlowCronJobs(tx as unknown as Db, {
+        flowId: draft.id,
+        workspaceId: ctx.workspace.id,
+        flowName: draft.name,
+        flowVersion: draft.version,
+        nodes: draft.nodes,
+      });
+
       return snapshot;
     });
 
@@ -573,6 +586,28 @@ export const flowsRouter = router({
           throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'rollback failed' });
         }
 
+        const [rollbackSnapshot] = await tx
+          .select({
+            nodes: flowVersions.nodes,
+            name: flowVersions.name,
+            version: flowVersions.version,
+          })
+          .from(flowVersions)
+          .where(and(eq(flowVersions.flowId, draft.id), eq(flowVersions.version, snapshot.version)))
+          .limit(1);
+
+        if (!rollbackSnapshot) {
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'rollback snapshot missing' });
+        }
+
+        await syncPublishedFlowCronJobs(tx as unknown as Db, {
+          flowId: draft.id,
+          workspaceId: ctx.workspace.id,
+          flowName: rollbackSnapshot.name,
+          flowVersion: rollbackSnapshot.version,
+          nodes: rollbackSnapshot.nodes,
+        });
+
         return row;
       });
 
@@ -627,10 +662,17 @@ export const flowsRouter = router({
 
   delete: workspaceProcedure.input(parse(FlowIdInput)).mutation(async ({ ctx, input }) => {
     requireWorkspaceRole(ctx, ['owner', 'admin'], 'Deleting flows');
-    const deleted = await ctx.db
-      .delete(flows)
-      .where(and(eq(flows.id, input.id), eq(flows.workspaceId, ctx.workspace.id)))
-      .returning({ id: flows.id });
+    const deleted = await ctx.db.transaction(async (tx) => {
+      await deletePublishedFlowCronJobs(tx as unknown as Db, {
+        workspaceId: ctx.workspace.id,
+        flowId: input.id,
+      });
+
+      return tx
+        .delete(flows)
+        .where(and(eq(flows.id, input.id), eq(flows.workspaceId, ctx.workspace.id)))
+        .returning({ id: flows.id });
+    });
     if (deleted.length === 0) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'flow not found' });
     }

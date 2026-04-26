@@ -2,6 +2,7 @@ import { router } from '../trpc.js';
 import { authRouter } from './auth.js';
 import { automationRouter } from './automation.js';
 import { channelsRouter } from './channels.js';
+import { cronRouter } from './cron.js';
 import { flowsRouter } from './flows.js';
 import { gatewayRouter } from './gateway.js';
 import { memoryRouter } from './memory.js';
@@ -21,6 +22,7 @@ export const appRouter = router({
   ops: opsRouter,
   workspaces: workspacesRouter,
   channels: channelsRouter,
+  cron: cronRouter,
   flows: flowsRouter,
   runs: runsRouter,
   nodes: nodesRouter,

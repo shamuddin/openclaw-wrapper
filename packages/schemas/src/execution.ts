@@ -1,4 +1,13 @@
 import type { GraphEdge, GraphNode } from './flow.js';
+import {
+  getCronTriggerCronExpression,
+  getCronTriggerDisplaySchedule,
+  getCronTriggerRunAt,
+  getCronTriggerScheduleKind,
+  getCronTriggerTimezone,
+  getCronTriggerEveryAmount,
+  getCronTriggerEveryUnit,
+} from './cron-trigger.js';
 import type { RunTrigger } from './run.js';
 
 export type FlowExecutionIssueCode =
@@ -55,14 +64,6 @@ function getConfiguredChannelRouteKey(node: GraphNode): string | undefined {
 
 function getConfiguredChannelMessagePattern(node: GraphNode): string | undefined {
   return readNonEmptyString(node.data.messagePattern)?.toLowerCase();
-}
-
-function getConfiguredCronSchedule(node: GraphNode): string | undefined {
-  return readNonEmptyString(node.data.schedule);
-}
-
-function getConfiguredCronTimezone(node: GraphNode): string | undefined {
-  return readNonEmptyString(node.data.timezone);
 }
 
 function getConfiguredHookName(node: GraphNode): string | undefined {
@@ -421,12 +422,17 @@ function channelTriggerMatches(node: GraphNode, trigger: RunTrigger, input: unkn
 }
 
 function cronTriggerMatches(node: GraphNode, trigger: RunTrigger): boolean {
-  const configuredSchedule = getConfiguredCronSchedule(node);
+  const scheduleKind = getCronTriggerScheduleKind(node.data);
+  if (scheduleKind !== 'cron') {
+    return true;
+  }
+
+  const configuredSchedule = getCronTriggerCronExpression(node.data);
   if (!configuredSchedule) {
     return false;
   }
 
-  const configuredTimezone = getConfiguredCronTimezone(node) ?? 'UTC';
+  const configuredTimezone = getCronTriggerTimezone(node.data) ?? 'UTC';
   const requestedSchedule = readNonEmptyString(trigger.schedule);
   const requestedTimezone = readNonEmptyString(trigger.timezone) ?? 'UTC';
 
@@ -705,22 +711,55 @@ export function validateFlowSemantics(nodes: GraphNode[], edges: GraphEdge[]): F
   for (const node of nodes) {
     if (node.type !== 'trigger.cron') continue;
 
-    const schedule = getConfiguredCronSchedule(node);
-    const timezone = getConfiguredCronTimezone(node) ?? 'UTC';
-    const scheduleError = validateCronExpression(schedule ?? '');
-    if (scheduleError) {
+    const scheduleKind = getCronTriggerScheduleKind(node.data);
+    if (scheduleKind === 'cron') {
+      const schedule = getCronTriggerCronExpression(node.data);
+      const timezone = getCronTriggerTimezone(node.data) ?? 'UTC';
+      const scheduleError = validateCronExpression(schedule ?? '');
+      if (scheduleError) {
+        issues.push({
+          code: 'invalid_cron_schedule',
+          nodeId: node.id,
+          message: scheduleError,
+        });
+      }
+
+      if (!isValidCronTimezone(timezone)) {
+        issues.push({
+          code: 'invalid_cron_timezone',
+          nodeId: node.id,
+          message: `Cron timezone "${timezone}" is invalid.`,
+        });
+      }
+      continue;
+    }
+
+    if (scheduleKind === 'every') {
+      const amount = getCronTriggerEveryAmount(node.data);
+      const unit = getCronTriggerEveryUnit(node.data);
+      if (!amount) {
+        issues.push({
+          code: 'invalid_cron_schedule',
+          nodeId: node.id,
+          message: 'Every schedule requires a whole-number interval greater than 0.',
+        });
+      }
+      if (!['minutes', 'hours', 'days'].includes(unit)) {
+        issues.push({
+          code: 'invalid_cron_schedule',
+          nodeId: node.id,
+          message: 'Every schedule requires a valid unit.',
+        });
+      }
+      continue;
+    }
+
+    const runAt = getCronTriggerRunAt(node.data);
+    if (!runAt || !Number.isFinite(Date.parse(runAt))) {
       issues.push({
         code: 'invalid_cron_schedule',
         nodeId: node.id,
-        message: scheduleError,
-      });
-    }
-
-    if (!isValidCronTimezone(timezone)) {
-      issues.push({
-        code: 'invalid_cron_timezone',
-        nodeId: node.id,
-        message: `Cron timezone "${timezone}" is invalid.`,
+        message: 'Run at requires a valid ISO date-time with timezone.',
       });
     }
   }
@@ -889,8 +928,16 @@ export function resolveExecutionEntryTrigger(
       return { error: 'No cron trigger node is available for this event.' };
     }
 
-    const configuredSchedule = getConfiguredCronSchedule(configuredTriggerNode);
-    const configuredTimezone = getConfiguredCronTimezone(configuredTriggerNode) ?? 'UTC';
+    const scheduleKind = getCronTriggerScheduleKind(configuredTriggerNode.data);
+    if (scheduleKind !== 'cron') {
+      const displaySchedule = getCronTriggerDisplaySchedule(configuredTriggerNode.data) ?? scheduleKind;
+      return {
+        error: `Cron trigger expects a ${displaySchedule} schedule, but this event did not match it.`,
+      };
+    }
+
+    const configuredSchedule = getCronTriggerCronExpression(configuredTriggerNode.data);
+    const configuredTimezone = getCronTriggerTimezone(configuredTriggerNode.data) ?? 'UTC';
     return {
       error: `Cron trigger expects schedule "${configuredSchedule ?? 'unknown'}" in timezone "${configuredTimezone}", but received "${trigger.schedule ?? 'unknown'}" in "${trigger.timezone ?? 'UTC'}".`,
     };

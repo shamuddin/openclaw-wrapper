@@ -23,7 +23,15 @@ import {
   Webhook,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import {
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { NodeConfigPanel } from './NodeConfigPanel';
 import { RunDetails } from './RunDetails';
@@ -33,6 +41,21 @@ import { useCanvasStore } from './store';
 import { getBuilderIssues } from './validation';
 
 type InspectorTab = 'configure' | 'runs';
+
+const INSPECTOR_DEFAULT_WIDTH = 360;
+const INSPECTOR_MIN_WIDTH = 320;
+const INSPECTOR_MAX_WIDTH = 760;
+
+function clampInspectorWidth(width: number): number {
+  if (typeof window === 'undefined') {
+    return Math.min(INSPECTOR_MAX_WIDTH, Math.max(INSPECTOR_MIN_WIDTH, width));
+  }
+  const viewportAwareMax = Math.min(
+    INSPECTOR_MAX_WIDTH,
+    Math.max(INSPECTOR_MIN_WIDTH, window.innerWidth - 560),
+  );
+  return Math.min(viewportAwareMax, Math.max(INSPECTOR_MIN_WIDTH, width));
+}
 
 function prettyJson(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? 'null';
@@ -86,12 +109,62 @@ export function RunInspector() {
   const [revealedTriggerSecret, setRevealedTriggerSecret] = useState<string | null>(null);
   const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
   const [runLimit, setRunLimit] = useState(25);
+  const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH);
+  const [isResizingInspector, setIsResizingInspector] = useState(false);
+  const resizeStartRef = useRef({ x: 0, width: INSPECTOR_DEFAULT_WIDTH });
 
   const searchParams = useSearchParams();
   const utils = trpc.useUtils();
   const workspaceQuery = trpc.workspaces.current.useQuery();
   const workspaceRole = workspaceQuery.data?.current.role ?? 'member';
   const canManageTriggerSecrets = workspaceRole === 'owner' || workspaceRole === 'admin';
+
+  useEffect(() => {
+    const storedWidth = window.localStorage.getItem('openclaw:builder-inspector-width');
+    if (!storedWidth) return;
+    const parsed = Number.parseInt(storedWidth, 10);
+    if (Number.isFinite(parsed)) {
+      setInspectorWidth(clampInspectorWidth(parsed));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isResizingInspector) return;
+
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    function handlePointerMove(event: PointerEvent) {
+      const delta = event.clientX - resizeStartRef.current.x;
+      setInspectorWidth(clampInspectorWidth(resizeStartRef.current.width - delta));
+    }
+
+    function handlePointerUp() {
+      setIsResizingInspector(false);
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [isResizingInspector]);
+
+  useEffect(() => {
+    window.localStorage.setItem('openclaw:builder-inspector-width', String(inspectorWidth));
+  }, [inspectorWidth]);
+
+  function beginInspectorResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (window.innerWidth < 1024) return;
+    event.preventDefault();
+    resizeStartRef.current = { x: event.clientX, width: inspectorWidth };
+    setIsResizingInspector(true);
+  }
 
   const runsQuery = trpc.runs.list.useQuery(
     { flowId: flowId ?? '00000000-0000-0000-0000-000000000000', limit: runLimit },
@@ -429,11 +502,11 @@ export function RunInspector() {
         });
         return;
       case 'cron':
-        if (!triggerPlan.schedule || !triggerPlan.timezone) return;
+        if (!triggerPlan.schedule) return;
         startCronMut.mutate({
           flowId,
           schedule: triggerPlan.schedule,
-          timezone: triggerPlan.timezone,
+          ...(triggerPlan.timezone ? { timezone: triggerPlan.timezone } : {}),
           input: triggerPlan.payload,
           label: 'Inspector cron sample',
           sourceId: 'inspector:cron',
@@ -485,7 +558,26 @@ export function RunInspector() {
 
   return (
     <>
-      <aside className="flex h-[40vh] w-full shrink-0 flex-col border-t border-[var(--color-border)] bg-[var(--color-surface)] lg:h-full lg:w-[320px] lg:border-l lg:border-t-0">
+      <aside
+        style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}
+        className="relative flex h-[40vh] w-full shrink-0 flex-col border-t border-[var(--color-border)] bg-[var(--color-surface)] lg:h-full lg:w-[var(--inspector-width)] lg:border-l lg:border-t-0"
+      >
+        <button
+          type="button"
+          aria-label="Resize configuration panel"
+          title="Drag to resize panel. Double-click to reset."
+          onPointerDown={beginInspectorResize}
+          onDoubleClick={() => setInspectorWidth(INSPECTOR_DEFAULT_WIDTH)}
+          className={`absolute left-0 top-0 z-20 hidden h-full w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center lg:flex ${
+            isResizingInspector ? 'bg-blue-500/10' : 'hover:bg-blue-500/5'
+          }`}
+        >
+          <span
+            className={`h-12 w-1 rounded-full transition ${
+              isResizingInspector ? 'bg-blue-500' : 'bg-gray-300'
+            }`}
+          />
+        </button>
         {/* Header */}
         <div className="border-b border-[var(--color-border)] px-4 py-3">
           <div className="flex items-center justify-between">

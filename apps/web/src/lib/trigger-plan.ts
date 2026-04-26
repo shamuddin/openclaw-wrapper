@@ -1,6 +1,12 @@
 'use client';
 
 import type { GraphNode } from '@openclaw-wrapper/schemas';
+import {
+  buildCronScheduleFromTriggerData,
+  getCronTriggerDisplaySchedule,
+  getCronTriggerScheduleKind,
+  getCronTriggerTimezone,
+} from '@openclaw-wrapper/schemas/cron-trigger';
 
 export type TriggerPlan = {
   kind: 'webhook' | 'channel' | 'cron' | 'hook' | 'task' | 'standing-order' | 'manual';
@@ -100,17 +106,29 @@ export function buildTriggerPlan(nodes: GraphNode[], flowName: string): TriggerP
   }
 
   if (triggerNode.type === 'trigger.cron') {
-    const schedule = readNodeString(triggerNode, 'schedule') || '0 * * * *';
-    const timezone = readNodeString(triggerNode, 'timezone') || 'UTC';
+    const scheduleKind = getCronTriggerScheduleKind(triggerNode.data);
+    const displaySchedule = getCronTriggerDisplaySchedule(triggerNode.data) || 'cron';
+    const timezone = getCronTriggerTimezone(triggerNode.data) || 'UTC';
+    const schedule = readNodeString(triggerNode, 'schedule') || displaySchedule;
+    const resolvedSchedule = buildCronScheduleFromTriggerData(triggerNode.data);
     return {
       kind: 'cron',
       schedule,
-      timezone,
-      title: 'Cron sample',
-      description: 'Runs the published cron flow with a sample scheduled event payload.',
-      meta: [`Schedule: ${schedule}`, `Timezone: ${timezone}`],
+      timezone: scheduleKind === 'cron' ? timezone : undefined,
+      title: 'Scheduled trigger sample',
+      description: 'Runs the published scheduled flow with a sample scheduler event payload.',
+      meta: [
+        `Schedule: ${displaySchedule}`,
+        ...(scheduleKind === 'cron' ? [`Timezone: ${timezone}`] : []),
+      ],
       runLabel: 'Run cron sample',
-      payload: { scheduledAt: nowIso, schedule, timezone, flowName },
+      payload: {
+        scheduledAt: nowIso,
+        schedule,
+        ...(scheduleKind === 'cron' ? { timezone } : {}),
+        ...(resolvedSchedule ? { scheduleKind: resolvedSchedule.kind } : {}),
+        flowName,
+      },
     };
   }
 
