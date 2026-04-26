@@ -15,6 +15,7 @@ import {
 } from '../channel-profiles.js';
 import { router, workspaceProcedure } from '../trpc.js';
 import { parse } from '../validate.js';
+import { testYouTubeProfile } from '../youtube-service.js';
 
 const Uuid = Type.String({ format: 'uuid', minLength: 36, maxLength: 36 });
 
@@ -157,6 +158,17 @@ export const channelsRouter = router({
       requireWorkspaceRole(ctx, ['owner', 'admin'], 'Sending test messages');
       try {
         return await sendChannelProfileTest(ctx.db, input, ctx.workspace.id);
+      } catch (error) {
+        rethrowChannelError(error);
+      }
+    }),
+
+  testYouTube: workspaceProcedure
+    .input(parse(ChannelProfileIdInput))
+    .mutation(async ({ ctx, input }) => {
+      requireWorkspaceRole(ctx, ['owner', 'admin'], 'Testing YouTube API profiles');
+      try {
+        return await testYouTubeProfile(ctx.db, input.id, ctx.workspace.id);
       } catch (error) {
         rethrowChannelError(error);
       }

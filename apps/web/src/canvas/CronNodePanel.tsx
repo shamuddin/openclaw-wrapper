@@ -53,6 +53,11 @@ const TOOL_PRESETS: Array<{ label: string; value: string; description: string }>
     description: 'Search, fetch pages, and use the browser.',
   },
   {
+    label: 'YouTube read-only',
+    value: 'youtube.readonly, youtube.channel, youtube.videos',
+    description: 'Inject configured YouTube channel/video context before the scheduled run.',
+  },
+  {
     label: 'Messaging',
     value: 'message, sessions_list, sessions_send, session_status',
     description: 'Send messages and inspect/reuse sessions.',

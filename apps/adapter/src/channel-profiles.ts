@@ -208,6 +208,52 @@ export const CHANNEL_PROFILE_TEMPLATES: ChannelProfileTemplate[] = [
     ],
   },
   {
+    id: 'youtube-data-api',
+    label: 'YouTube Data API',
+    channelType: 'youtube',
+    description:
+      'Store a read-only YouTube Data API key so scheduled agents can inspect public channel and video context.',
+    icon: 'Play',
+    pairingMode: 'none',
+    supportsTestSend: false,
+    defaults: {
+      channelIds: '',
+      maxResults: '5',
+      includeStatistics: true,
+    },
+    fields: [
+      {
+        key: 'apiKey',
+        label: 'YouTube API key',
+        type: 'password',
+        required: true,
+        description:
+          'Stored encrypted. API keys are read-only here and only fetch public YouTube Data API metadata.',
+      },
+      {
+        key: 'channelIds',
+        label: 'Channel IDs or handles',
+        type: 'textarea',
+        placeholder: 'UC_x5XG1OV2P6uZZ5FSM9Ttw\n@youtubecreators',
+        description:
+          'Optional newline- or comma-separated channel IDs/handles the cron agent should monitor.',
+      },
+      {
+        key: 'maxResults',
+        label: 'Recent videos per channel',
+        type: 'text',
+        placeholder: '5',
+        description: 'How many recent public videos to preload for each configured channel.',
+      },
+      {
+        key: 'includeStatistics',
+        label: 'Include public statistics',
+        type: 'boolean',
+        description: 'Include public subscriber, view, and video counts when YouTube returns them.',
+      },
+    ],
+  },
+  {
     id: 'custom-channel',
     label: 'Custom Channel',
     channelType: 'custom',
