@@ -6,7 +6,6 @@
 
 Design flows, manage channels, inspect runs, review approvals, and operate automations — all from a local-first workspace.
 
-[![CI](https://github.com/shamuddin/openclaw-wrapper/actions/workflows/ci.yml/badge.svg)](https://github.com/shamuddin/openclaw-wrapper/actions/workflows/ci.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node >= 22.16.0](https://img.shields.io/badge/node-%3E%3D22.16.0-339933?logo=node.js&logoColor=white)](package.json)
 [![pnpm 9](https://img.shields.io/badge/pnpm-9-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
