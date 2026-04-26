@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: openclaw
+    ports:
+      - "55433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "56379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  adapter:
+    build:
+      context: ..
+      dockerfile: apps/adapter/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      HOST: 0.0.0.0
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/openclaw
+      REDIS_URL: redis://redis:6379
+      AUTH_MODE: disabled
+      LOCAL_AUTH_EMAIL: local@openclaw-wrapper.local
+      LOCAL_AUTH_NAME: Local User
+      # Gateway runs on the host outside compose; use host.docker.internal.
+      # On Linux, run compose with `--add-host host.docker.internal:host-gateway`
+      # or switch to network_mode: host.
+      GATEWAY_WS_URL: ws://host.docker.internal:18789
+      CORS_ORIGIN: http://localhost:3000
+      LOG_LEVEL: info
+    ports:
+      - "4000:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  pgdata:

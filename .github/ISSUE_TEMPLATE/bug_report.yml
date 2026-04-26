@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible problem in the product, docs, or developer workflow.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        Please include enough detail for someone else to reproduce the issue from a clean checkout or a normal local setup.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+      placeholder: A short description of the problem and the expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the exact steps needed to reproduce the issue.
+      placeholder: |
+        1. Start the local services
+        2. Open the workspace page
+        3. Create a flow
+        4. Observe the error
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Share the environment details that matter for reproduction.
+      placeholder: |
+        - OS:
+        - Node version:
+        - pnpm version:
+        - Browser:
+        - AUTH_MODE:
+        - Gateway setup:
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste relevant output, stack traces, or screenshots.
+      render: shell
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Anything else that would help explain impact or scope.

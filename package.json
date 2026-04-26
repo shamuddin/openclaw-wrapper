@@ -1,0 +1,29 @@
+{
+  "name": "openclaw-wrapper",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "scripts": {
+    "dev": "corepack pnpm --parallel --filter @openclaw-wrapper/adapter --filter @openclaw-wrapper/web run dev",
+    "build": "corepack pnpm -r run build",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d postgres redis",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "db:generate": "corepack pnpm --filter @openclaw-wrapper/adapter db:generate",
+    "db:migrate": "corepack pnpm --filter @openclaw-wrapper/adapter db:migrate",
+    "db:push": "corepack pnpm --filter @openclaw-wrapper/adapter db:push",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "typecheck": "corepack pnpm -r --workspace-concurrency=1 run typecheck",
+    "test": "corepack pnpm -r run test",
+    "clean": "corepack pnpm -r --if-present run clean"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  }
+}

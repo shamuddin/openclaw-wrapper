@@ -1,0 +1,74 @@
+{
+  "name": "@openclaw-wrapper/schemas",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./flow": {
+      "types": "./dist/flow.d.ts",
+      "import": "./dist/flow.js",
+      "default": "./dist/flow.js"
+    },
+    "./channel": {
+      "types": "./dist/channel.d.ts",
+      "import": "./dist/channel.js",
+      "default": "./dist/channel.js"
+    },
+    "./execution": {
+      "types": "./dist/execution.d.ts",
+      "import": "./dist/execution.js",
+      "default": "./dist/execution.js"
+    },
+    "./memory": {
+      "types": "./dist/memory.d.ts",
+      "import": "./dist/memory.js",
+      "default": "./dist/memory.js"
+    },
+    "./node-type": {
+      "types": "./dist/node-type.d.ts",
+      "import": "./dist/node-type.js",
+      "default": "./dist/node-type.js"
+    },
+    "./formats": {
+      "types": "./dist/formats.d.ts",
+      "import": "./dist/formats.js",
+      "default": "./dist/formats.js"
+    },
+    "./ping": {
+      "types": "./dist/ping.d.ts",
+      "import": "./dist/ping.js",
+      "default": "./dist/ping.js"
+    },
+    "./run": {
+      "types": "./dist/run.d.ts",
+      "import": "./dist/run.js",
+      "default": "./dist/run.js"
+    },
+    "./workspace": {
+      "types": "./dist/workspace.d.ts",
+      "import": "./dist/workspace.js",
+      "default": "./dist/workspace.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.9"
+  },
+  "devDependencies": {
+    "@openclaw-wrapper/tsconfig": "workspace:*",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,166 @@
+export interface CanvasRecipeNodeTemplate {
+  id: string;
+  nodeType: string;
+  label: string;
+  position: { x: number; y: number };
+  data?: Record<string, unknown>;
+}
+
+export interface CanvasRecipeEdgeTemplate {
+  source: string;
+  sourcePort: string;
+  target: string;
+  targetPort: string;
+}
+
+export interface CanvasRecipeDefinition {
+  id: string;
+  title: string;
+  description: string;
+  steps: string[];
+  nodes: CanvasRecipeNodeTemplate[];
+  edges: CanvasRecipeEdgeTemplate[];
+}
+
+export const CANVAS_RECIPES: CanvasRecipeDefinition[] = [
+  {
+    id: 'search-browser-brief',
+    title: 'Search -> Browser -> Brief',
+    description: 'Find a strong result, open it, shape a compact payload, and hand it to an agent.',
+    steps: ['Webhook', 'Web Search', 'Browser Lite', 'Shape Payload', 'Run Agent'],
+    nodes: [
+      {
+        id: 'trigger',
+        nodeType: 'trigger.webhook',
+        label: 'Inbound topic',
+        position: { x: 0, y: 40 },
+        data: {
+          eventName: '',
+          notes: 'Send a topic or question in the webhook payload.',
+        },
+      },
+      {
+        id: 'search',
+        nodeType: 'tool.web-search',
+        label: 'Find top result',
+        position: { x: 220, y: 40 },
+        data: {
+          provider: 'duckduckgo',
+          query: '{{topic}}',
+          limit: '5',
+          outputMode: 'top-result-url',
+        },
+      },
+      {
+        id: 'browser',
+        nodeType: 'tool.browser',
+        label: 'Open result page',
+        position: { x: 440, y: 40 },
+        data: {
+          action: 'extract',
+          target: '{{input}}',
+          extractMode: 'metadata',
+          timeoutMs: '30000',
+        },
+      },
+      {
+        id: 'shape',
+        nodeType: 'tool.payload-template',
+        label: 'Build brief payload',
+        position: { x: 660, y: 40 },
+        data: {
+          outputMode: 'replace',
+          template:
+            '{"sourceUrl":"{{finalUrl}}","pageTitle":"{{title}}","pageDescription":"{{description}}","ogTitle":"{{extracted.ogTitle}}","ogDescription":"{{extracted.ogDescription}}"}',
+        },
+      },
+      {
+        id: 'agent',
+        nodeType: 'action.agent',
+        label: 'Summarize and route',
+        position: { x: 880, y: 40 },
+        data: {
+          instructions:
+            'Summarize the page briefly and return a structured routing recommendation.',
+          waitTimeoutMs: '30000',
+        },
+      },
+    ],
+    edges: [
+      { source: 'trigger', sourcePort: 'out', target: 'search', targetPort: 'in' },
+      { source: 'search', sourcePort: 'out', target: 'browser', targetPort: 'in' },
+      { source: 'browser', sourcePort: 'out', target: 'shape', targetPort: 'in' },
+      { source: 'shape', sourcePort: 'out', target: 'agent', targetPort: 'in' },
+    ],
+  },
+  {
+    id: 'search-browser-channel-reply',
+    title: 'Search -> Browser -> Reply',
+    description:
+      'Look up a page, trim the output, and reply back on the originating channel with a safer template.',
+    steps: ['Channel Trigger', 'Web Search', 'Browser Lite', 'Shape Payload', 'Channel Reply'],
+    nodes: [
+      {
+        id: 'trigger',
+        nodeType: 'trigger.channel',
+        label: 'Inbound channel message',
+        position: { x: 0, y: 40 },
+        data: {
+          channelType: '',
+          routeKey: '',
+          messagePattern: '',
+        },
+      },
+      {
+        id: 'search',
+        nodeType: 'tool.web-search',
+        label: 'Search answer source',
+        position: { x: 220, y: 40 },
+        data: {
+          provider: 'duckduckgo',
+          query: '{{message}}',
+          limit: '5',
+          outputMode: 'top-result-url',
+        },
+      },
+      {
+        id: 'browser',
+        nodeType: 'tool.browser',
+        label: 'Open top source',
+        position: { x: 440, y: 40 },
+        data: {
+          action: 'extract',
+          target: '{{input}}',
+          extractMode: 'meta:description',
+          timeoutMs: '30000',
+        },
+      },
+      {
+        id: 'shape',
+        nodeType: 'tool.payload-template',
+        label: 'Prepare reply text',
+        position: { x: 660, y: 40 },
+        data: {
+          outputMode: 'assign',
+          outputPath: 'replyText',
+          template: '{{extracted}}',
+        },
+      },
+      {
+        id: 'reply',
+        nodeType: 'action.channel-reply',
+        label: 'Reply with source summary',
+        position: { x: 880, y: 40 },
+        data: {
+          messageTemplate: '{{replyText}}',
+        },
+      },
+    ],
+    edges: [
+      { source: 'trigger', sourcePort: 'out', target: 'search', targetPort: 'in' },
+      { source: 'search', sourcePort: 'out', target: 'browser', targetPort: 'in' },
+      { source: 'browser', sourcePort: 'out', target: 'shape', targetPort: 'in' },
+      { source: 'shape', sourcePort: 'out', target: 'reply', targetPort: 'in' },
+    ],
+  },
+];

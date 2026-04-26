@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+@theme {
+  /* Core palette */
+  --color-bg: oklch(0.985 0.002 255);
+  --color-fg: oklch(0.13 0.02 260);
+  --color-accent: oklch(0.546 0.215 264);
+  --color-accent-hover: oklch(0.48 0.215 264);
+  --color-surface: oklch(1.0 0 0);
+  --color-surface-2: oklch(0.961 0.006 255);
+  --color-border: oklch(0.914 0.008 255);
+
+  /* Z-index scale */
+  --z-canvas: 0;
+  --z-sidebar: 10;
+  --z-header: 20;
+  --z-dropdown: 50;
+  --z-modal: 100;
+  --z-toast: 200;
+
+  /* Typography */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  height: 100%;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-mono);
+}
+
+/* Toast slide-in animation */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    max-height: 120px;
+    margin-bottom: 0.5rem;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(8px) scale(0.97);
+    max-height: 0;
+    margin-bottom: 0;
+  }
+}
+
+.toast-enter {
+  animation: toast-in 0.2s ease-out both;
+}
+
+.toast-exit {
+  animation: toast-out 0.2s ease-in both;
+}
+
+/* Modal fade-in */
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.modal-content {
+  animation: modal-in 0.15s ease-out both;
+}
