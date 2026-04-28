@@ -15,6 +15,7 @@ const HANDLE_STYLE = {
 function CustomNodeImpl({ id, data, selected }: NodeProps<CanvasNode>) {
   const nodeCatalog = useCanvasStore((state) => state.nodeCatalog);
   const runStatus = useCanvasStore((state) => state.runNodeStatuses[id]);
+  const issueCount = useCanvasStore((state) => state.nodeIssueCounts[id] ?? 0);
   const selectedNodeCount = useCanvasStore(
     (state) => state.nodes.filter((node) => node.selected).length,
   );
@@ -108,6 +109,12 @@ function CustomNodeImpl({ id, data, selected }: NodeProps<CanvasNode>) {
             <Loader2 className="h-3 w-3 animate-spin" strokeWidth={2} />
           ) : null}
           {runStatusLabel}
+        </div>
+      ) : null}
+
+      {issueCount > 0 && !runStatusLabel ? (
+        <div className="nodrag nopan absolute -right-2 -top-2 z-10 inline-flex h-6 items-center rounded-full border border-amber-300 bg-amber-50 px-2 text-[10px] font-semibold text-amber-800 shadow-sm">
+          {issueCount} issue{issueCount === 1 ? '' : 's'}
         </div>
       ) : null}
 
@@ -216,8 +223,9 @@ function CustomNodeImpl({ id, data, selected }: NodeProps<CanvasNode>) {
             id={port.name}
             type="target"
             position={Position.Left}
-            title={port.name}
+            title={`${port.label} (${port.dataType})`}
             style={{ ...HANDLE_STYLE, top: spacing * (index + 1) }}
+            className="transition hover:scale-125"
           />
         );
       })}
@@ -232,8 +240,9 @@ function CustomNodeImpl({ id, data, selected }: NodeProps<CanvasNode>) {
             id={port.name}
             type="source"
             position={Position.Right}
-            title={port.name}
+            title={`${port.label} (${port.dataType})`}
             style={{ ...HANDLE_STYLE, top: spacing * (index + 1) }}
+            className="transition hover:scale-125"
           />
         );
       })}

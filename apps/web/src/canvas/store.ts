@@ -21,7 +21,8 @@ export interface CanvasNodeData extends Record<string, unknown> {
   label: string;
 }
 
-export type CanvasNode = Node<CanvasNodeData, 'openclaw'>;
+export const CANVAS_NOTE_NODE_TYPE = 'canvas.note';
+export type CanvasNode = Node<CanvasNodeData, 'openclaw' | 'note'>;
 export type CanvasNodeRunStatus =
   | 'queued'
   | 'running'
@@ -29,6 +30,8 @@ export type CanvasNodeRunStatus =
   | 'succeeded'
   | 'failed'
   | 'rejected';
+
+export type CanvasEdgeRunStatus = Exclude<CanvasNodeRunStatus, 'queued'>;
 
 export interface LoadedFlow {
   id: string;
@@ -59,6 +62,7 @@ interface CanvasState {
   publishedVersion: number | null;
   dirty: boolean;
   runNodeStatuses: Record<string, CanvasNodeRunStatus>;
+  nodeIssueCounts: Record<string, number>;
   clipboard: ClipboardSnapshot | null;
   pasteCount: number;
   // Undo/redo
@@ -77,7 +81,10 @@ interface CanvasState {
   selectEdge: (edgeId: string | null) => void;
   setNodeCatalog: (catalog: NodeCatalog) => void;
   setRunNodeStatuses: (statuses: Record<string, CanvasNodeRunStatus>) => void;
+  setNodeIssueCounts: (counts: Record<string, number>) => void;
+  isConnectionValid: (connection: Connection) => boolean;
   addNode: (nodeType: string, position: { x: number; y: number }) => void;
+  addNote: (position?: { x: number; y: number }) => void;
   applyRecipe: (recipeId: string) => boolean;
   setFlowName: (name: string) => void;
   loadFlow: (flow: LoadedFlow) => void;
@@ -94,6 +101,7 @@ interface CanvasState {
   pasteSelection: () => boolean;
   duplicateSelection: () => boolean;
   setSelectedNodesLocked: (locked: boolean) => boolean;
+  autoLayout: () => boolean;
 }
 
 let nodeCounter = 0;
@@ -115,8 +123,20 @@ function isCanvasLockedValue(value: unknown): boolean {
   return value === true || value === 'true';
 }
 
+function isCanvasNoteNode(node: CanvasNode): boolean {
+  return node.type === 'note' || node.data.nodeType === CANVAS_NOTE_NODE_TYPE;
+}
+
 function applyCanvasNodeFlags(node: CanvasNode): CanvasNode {
   const locked = isCanvasLockedValue(node.data[CANVAS_LOCKED_KEY]);
+  if (isCanvasNoteNode(node)) {
+    return {
+      ...node,
+      type: 'note',
+      draggable: !locked,
+      connectable: false,
+    };
+  }
   return {
     ...node,
     draggable: !locked,
@@ -141,6 +161,82 @@ function createCanvasEdge(connection: Connection): Edge {
       strokeWidth: 1.5,
     },
   };
+}
+
+function isCompatibleDataType(sourceType: string, targetType: string): boolean {
+  return sourceType === 'any' || targetType === 'any' || sourceType === targetType;
+}
+
+function wouldCreateCycle(edges: Edge[], source: string, target: string): boolean {
+  const outgoing = new Map<string, string[]>();
+  for (const edge of edges) {
+    outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge.target]);
+  }
+  outgoing.set(source, [...(outgoing.get(source) ?? []), target]);
+
+  const visited = new Set<string>();
+  const stack = [target];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) continue;
+    if (current === source) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    stack.push(...(outgoing.get(current) ?? []));
+  }
+  return false;
+}
+
+function validateConnection(
+  catalog: NodeCatalog | null,
+  nodes: CanvasNode[],
+  edges: Edge[],
+  connection: Connection,
+  replacingEdgeId?: string,
+): boolean {
+  if (!connection.source || !connection.target) return false;
+  if (connection.source === connection.target) return false;
+
+  const sourceNode = nodes.find((node) => node.id === connection.source);
+  const targetNode = nodes.find((node) => node.id === connection.target);
+  if (!sourceNode || !targetNode) return false;
+  if (isCanvasNoteNode(sourceNode) || isCanvasNoteNode(targetNode)) return false;
+
+  const sourceDescriptor = getNodeType(catalog, sourceNode.data.nodeType);
+  const targetDescriptor = getNodeType(catalog, targetNode.data.nodeType);
+  if (!sourceDescriptor || !targetDescriptor) return false;
+
+  const sourcePortName = connection.sourceHandle ?? sourceDescriptor.outputs[0]?.name;
+  const targetPortName = connection.targetHandle ?? targetDescriptor.inputs[0]?.name;
+  if (!sourcePortName || !targetPortName) return false;
+
+  const sourcePort = sourceDescriptor.outputs.find((port) => port.name === sourcePortName);
+  const targetPort = targetDescriptor.inputs.find((port) => port.name === targetPortName);
+  if (!sourcePort || !targetPort) return false;
+  if (!isCompatibleDataType(sourcePort.dataType, targetPort.dataType)) return false;
+
+  const comparableEdges = edges.filter((edge) => edge.id !== replacingEdgeId);
+  if (
+    comparableEdges.some(
+      (edge) =>
+        edge.source === connection.source &&
+        edge.target === connection.target &&
+        (edge.sourceHandle ?? 'out') === sourcePortName &&
+        (edge.targetHandle ?? 'in') === targetPortName,
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    comparableEdges.some(
+      (edge) => edge.target === connection.target && (edge.targetHandle ?? 'in') === targetPortName,
+    )
+  ) {
+    return false;
+  }
+
+  return !wouldCreateCycle(comparableEdges, connection.source, connection.target);
 }
 
 function cloneMarker(
@@ -289,6 +385,111 @@ function pushHistory(
   return next.length > MAX_HISTORY ? next.slice(next.length - MAX_HISTORY) : next;
 }
 
+function readNodeWidth(node: CanvasNode): number {
+  return clampCanvasSize(Number(node.style?.width ?? node.data[CANVAS_WIDTH_KEY]), 220);
+}
+
+function readNodeHeight(node: CanvasNode): number {
+  return clampCanvasSize(Number(node.style?.height ?? node.data[CANVAS_HEIGHT_KEY]), 112);
+}
+
+function autoLayoutNodes(nodes: CanvasNode[], edges: Edge[]): CanvasNode[] {
+  if (nodes.length < 2) return nodes;
+
+  const flowNodes = nodes.filter((node) => !isCanvasNoteNode(node));
+  if (flowNodes.length < 2) return nodes;
+
+  const nodeIds = new Set(flowNodes.map((node) => node.id));
+  const outgoing = new Map<string, string[]>();
+  const indegree = new Map<string, number>();
+  for (const node of flowNodes) {
+    outgoing.set(node.id, []);
+    indegree.set(node.id, 0);
+  }
+
+  for (const edge of edges) {
+    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) continue;
+    outgoing.get(edge.source)?.push(edge.target);
+    indegree.set(edge.target, (indegree.get(edge.target) ?? 0) + 1);
+  }
+
+  const byPosition = [...flowNodes].sort(
+    (left, right) => left.position.y - right.position.y || left.position.x - right.position.x,
+  );
+  const queue = byPosition.filter((node) => (indegree.get(node.id) ?? 0) === 0).map((node) => node.id);
+  const remainingIndegree = new Map(indegree);
+  const layerById = new Map<string, number>();
+
+  for (const id of queue) {
+    layerById.set(id, 0);
+  }
+
+  for (let index = 0; index < queue.length; index += 1) {
+    const id = queue[index];
+    if (!id) continue;
+    const sourceLayer = layerById.get(id) ?? 0;
+    for (const targetId of outgoing.get(id) ?? []) {
+      layerById.set(targetId, Math.max(layerById.get(targetId) ?? 0, sourceLayer + 1));
+      const nextIndegree = (remainingIndegree.get(targetId) ?? 0) - 1;
+      remainingIndegree.set(targetId, nextIndegree);
+      if (nextIndegree === 0) {
+        queue.push(targetId);
+      }
+    }
+  }
+
+  let fallbackLayer = Math.max(0, ...layerById.values()) + 1;
+  for (const node of byPosition) {
+    if (!layerById.has(node.id)) {
+      layerById.set(node.id, fallbackLayer);
+      fallbackLayer += 1;
+    }
+  }
+
+  const layers = new Map<number, CanvasNode[]>();
+  for (const node of flowNodes) {
+    const layer = layerById.get(node.id) ?? 0;
+    layers.set(layer, [...(layers.get(layer) ?? []), node]);
+  }
+
+  const sortedLayerKeys = [...layers.keys()].sort((left, right) => left - right);
+  const minX = Math.min(...flowNodes.map((node) => node.position.x));
+  const minY = Math.min(...flowNodes.map((node) => node.position.y));
+  const originX = Number.isFinite(minX) ? Math.max(40, minX) : 80;
+  const originY = Number.isFinite(minY) ? Math.max(40, minY) : 80;
+  const columnGap = 120;
+  const rowGap = 44;
+  const layerX = new Map<number, number>();
+  let nextX = originX;
+
+  for (const layer of sortedLayerKeys) {
+    const layerNodes = layers.get(layer) ?? [];
+    layerX.set(layer, nextX);
+    const widest = Math.max(220, ...layerNodes.map(readNodeWidth));
+    nextX += widest + columnGap;
+  }
+
+  const positionById = new Map<string, { x: number; y: number }>();
+  for (const layer of sortedLayerKeys) {
+    const layerNodes = [...(layers.get(layer) ?? [])].sort(
+      (left, right) => left.position.y - right.position.y || left.position.x - right.position.x,
+    );
+    let nextY = originY;
+    for (const node of layerNodes) {
+      positionById.set(node.id, {
+        x: layerX.get(layer) ?? originX,
+        y: nextY,
+      });
+      nextY += readNodeHeight(node) + rowGap;
+    }
+  }
+
+  return nodes.map((node) => ({
+    ...node,
+    position: positionById.get(node.id) ?? node.position,
+  }));
+}
+
 export const useCanvasStore = create<CanvasState>((set, get) => ({
   nodeCatalog: null,
   nodes: [],
@@ -299,6 +500,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   publishedVersion: null,
   dirty: false,
   runNodeStatuses: {},
+  nodeIssueCounts: {},
   clipboard: null,
   pasteCount: 0,
   past: [],
@@ -371,26 +573,34 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   onConnect: (connection) =>
-    set((s) => ({
-      edges: addEdge(createCanvasEdge(connection), s.edges),
-      dirty: true,
-      past: pushHistory(s.past, s.nodes, s.edges),
-      future: [],
-      canUndo: true,
-      canRedo: false,
-    })),
+    set((s) => {
+      if (!validateConnection(s.nodeCatalog, s.nodes, s.edges, connection)) return s;
+      return {
+        edges: addEdge(createCanvasEdge(connection), s.edges),
+        dirty: true,
+        past: pushHistory(s.past, s.nodes, s.edges),
+        future: [],
+        canUndo: true,
+        canRedo: false,
+      };
+    }),
 
   reconnectEdge: (oldEdge, connection) =>
-    set((state) => ({
-      edges: reconnectCanvasEdge(oldEdge, connection, state.edges, {
-        shouldReplaceId: false,
-      }),
-      dirty: true,
-      past: pushHistory(state.past, state.nodes, state.edges),
-      future: [],
-      canUndo: true,
-      canRedo: false,
-    })),
+    set((state) => {
+      if (!validateConnection(state.nodeCatalog, state.nodes, state.edges, connection, oldEdge.id)) {
+        return state;
+      }
+      return {
+        edges: reconnectCanvasEdge(oldEdge, connection, state.edges, {
+          shouldReplaceId: false,
+        }),
+        dirty: true,
+        past: pushHistory(state.past, state.nodes, state.edges),
+        future: [],
+        canUndo: true,
+        canRedo: false,
+      };
+    }),
 
   selectNode: (nodeId) =>
     set((state) => ({
@@ -423,6 +633,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   setRunNodeStatuses: (statuses) => set({ runNodeStatuses: statuses }),
 
+  setNodeIssueCounts: (counts) => set({ nodeIssueCounts: counts }),
+
+  isConnectionValid: (connection) => {
+    const state = get();
+    return validateConnection(state.nodeCatalog, state.nodes, state.edges, connection);
+  },
+
   addNode: (nodeType, position) => {
     const catalog = get().nodeCatalog;
     const descriptor = getNodeType(catalog, nodeType);
@@ -441,6 +658,34 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     };
     set((s) => ({
       nodes: [...s.nodes, applyCanvasNodeFlags(node)],
+      dirty: true,
+      past: pushHistory(s.past, s.nodes, s.edges),
+      future: [],
+      canUndo: true,
+      canRedo: false,
+    }));
+  },
+
+  addNote: (position = { x: 120, y: 120 }) => {
+    const node: CanvasNode = applyCanvasNodeFlags({
+      id: nextNodeId(),
+      type: 'note',
+      position,
+      data: {
+        nodeType: CANVAS_NOTE_NODE_TYPE,
+        label: 'Note',
+        text: 'Write a note...',
+        tone: 'yellow',
+      },
+      style: {
+        width: 240,
+        height: 180,
+      },
+      selected: true,
+    });
+
+    set((s) => ({
+      nodes: [...s.nodes.map((entry) => ({ ...entry, selected: false })), node],
       dirty: true,
       past: pushHistory(s.past, s.nodes, s.edges),
       future: [],
@@ -559,6 +804,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       publishedVersion: flow.publishedVersion ?? null,
       dirty: false,
       runNodeStatuses: {},
+      nodeIssueCounts: {},
       clipboard: null,
       pasteCount: 0,
       past: [],
@@ -670,6 +916,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       flowVersion: 0,
       publishedVersion: null,
       dirty: false,
+      nodeIssueCounts: {},
       clipboard: null,
       pasteCount: 0,
       past: [],
@@ -762,6 +1009,27 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       canRedo: false,
     });
 
+    return true;
+  },
+
+  autoLayout: () => {
+    const state = get();
+    if (state.nodes.length < 2) return false;
+    const nextNodes = autoLayoutNodes(state.nodes, state.edges);
+    const changed = nextNodes.some(
+      (node, index) =>
+        node.position.x !== state.nodes[index]?.position.x ||
+        node.position.y !== state.nodes[index]?.position.y,
+    );
+    if (!changed) return false;
+    set({
+      nodes: nextNodes,
+      dirty: true,
+      past: pushHistory(state.past, state.nodes, state.edges),
+      future: [],
+      canUndo: true,
+      canRedo: false,
+    });
     return true;
   },
 }));

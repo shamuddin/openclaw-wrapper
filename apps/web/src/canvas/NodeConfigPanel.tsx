@@ -17,7 +17,7 @@ import {
   getNodeType,
 } from './node-types';
 import { edgesToGraph, nodesToGraph } from './serialize';
-import { useCanvasStore } from './store';
+import { CANVAS_NOTE_NODE_TYPE, useCanvasStore } from './store';
 import { getBuilderIssues } from './validation';
 
 function resolveFieldOptions(field: NodeConfigField, nodeData: Record<string, unknown>) {
@@ -496,6 +496,85 @@ export function NodeConfigPanel() {
 
   if (!selectedNode) {
     return null;
+  }
+
+  if (selectedNode.data.nodeType === CANVAS_NOTE_NODE_TYPE) {
+    const noteText = typeof selectedNode.data.text === 'string' ? selectedNode.data.text : '';
+    const noteTone = typeof selectedNode.data.tone === 'string' ? selectedNode.data.tone : 'yellow';
+
+    return (
+      <div className="rounded-xl border border-[var(--color-border)]">
+        <div className="flex items-start justify-between gap-2 border-b border-[var(--color-border)] px-3 py-2.5">
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">
+              Canvas note
+            </p>
+            <p className="mt-0.5 truncate text-sm font-semibold text-[var(--color-fg)]">
+              {selectedNode.data.label || 'Note'}
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Delete note"
+            title="Delete note"
+            onClick={() => setDeleteConfirmOpen(true)}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 transition hover:bg-red-50 hover:text-red-500"
+          >
+            <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+          </button>
+        </div>
+        <div className="space-y-3 px-3 py-3">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
+            Notes are saved with the canvas but never run as automation steps.
+          </div>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Note</span>
+            <textarea
+              value={noteText}
+              onChange={(event) =>
+                updateNodeData(selectedNode.id, {
+                  nodeType: CANVAS_NOTE_NODE_TYPE,
+                  text: event.target.value,
+                  label: event.target.value.split('\n')[0]?.slice(0, 40) || 'Note',
+                })
+              }
+              className="min-h-32 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+              placeholder="Write a note..."
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Color</span>
+            <select
+              value={noteTone}
+              onChange={(event) =>
+                updateNodeData(selectedNode.id, {
+                  nodeType: CANVAS_NOTE_NODE_TYPE,
+                  tone: event.target.value,
+                })
+              }
+              className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+            >
+              <option value="yellow">Yellow</option>
+              <option value="blue">Blue</option>
+              <option value="green">Green</option>
+              <option value="pink">Pink</option>
+            </select>
+          </label>
+        </div>
+        <ConfirmDialog
+          open={deleteConfirmOpen}
+          title="Delete note"
+          message="Remove this sticky note from the canvas?"
+          confirmLabel="Delete"
+          variant="danger"
+          onConfirm={() => {
+            deleteNode(selectedNode.id);
+            setDeleteConfirmOpen(false);
+          }}
+          onCancel={() => setDeleteConfirmOpen(false)}
+        />
+      </div>
+    );
   }
 
   const descriptor = getNodeType(nodeCatalog, selectedNode.data.nodeType);

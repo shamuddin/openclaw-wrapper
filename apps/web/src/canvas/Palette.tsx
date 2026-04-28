@@ -7,6 +7,7 @@ import {
   Clock3,
   FolderOpen,
   GitBranch,
+  NotebookPen,
   Search,
   Sparkles,
 } from 'lucide-react';
@@ -32,6 +33,7 @@ export function Palette() {
   const setNodeCatalog = useCanvasStore((state) => state.setNodeCatalog);
   const nodeCatalog = useCanvasStore((state) => state.nodeCatalog);
   const applyRecipe = useCanvasStore((state) => state.applyRecipe);
+  const addNote = useCanvasStore((state) => state.addNote);
   const catalogQuery = trpc.nodes.catalog.useQuery(undefined, { staleTime: 60_000 });
   const [query, setQuery] = useState('');
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
@@ -136,6 +138,26 @@ export function Palette() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 py-2">
+        {!normalizedQuery && (
+          <section className="mb-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]/70 p-2">
+            <button
+              type="button"
+              onClick={() => addNote()}
+              className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left transition hover:bg-white/60"
+            >
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                <NotebookPen className="h-3.5 w-3.5" strokeWidth={2} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-semibold text-[var(--color-fg)]">Sticky note</div>
+                <div className="truncate text-[11px] text-gray-400">
+                  Add canvas-only documentation.
+                </div>
+              </div>
+            </button>
+          </section>
+        )}
+
         {availableRecipes.length > 0 && !normalizedQuery && (
           <section className="mb-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]/70 p-2">
             <button

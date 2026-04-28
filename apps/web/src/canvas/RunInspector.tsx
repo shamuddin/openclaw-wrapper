@@ -91,6 +91,7 @@ export function RunInspector() {
     edges,
     selectedCanvasItem,
     setRunNodeStatuses,
+    setNodeIssueCounts,
   } = useCanvasStore(
     useShallow((state) => ({
       flowId: state.flowId,
@@ -103,6 +104,7 @@ export function RunInspector() {
       selectedCanvasItem:
         state.nodes.find((n) => n.selected)?.id ?? state.edges.find((e) => e.selected)?.id ?? null,
       setRunNodeStatuses: state.setRunNodeStatuses,
+      setNodeIssueCounts: state.setNodeIssueCounts,
     })),
   );
 
@@ -458,6 +460,14 @@ export function RunInspector() {
     () => getBuilderIssues(nodesToGraph(nodes), edgesToGraph(edges)),
     [edges, nodes],
   );
+  useEffect(() => {
+    const counts: Record<string, number> = {};
+    for (const issue of graphIssues) {
+      if (!issue.nodeId) continue;
+      counts[issue.nodeId] = (counts[issue.nodeId] ?? 0) + 1;
+    }
+    setNodeIssueCounts(counts);
+  }, [graphIssues, setNodeIssueCounts]);
   const triggerPlan = useMemo(
     () => buildTriggerPlan(nodesToGraph(nodes), flowName),
     [flowName, nodes],
