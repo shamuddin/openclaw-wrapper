@@ -29,12 +29,14 @@ import {
   Lock,
   Map as MapIcon,
   MousePointer2,
+  NotebookPen,
   Redo2,
   Sparkles,
   Spline,
   Trash2,
   Undo2,
   Unlock,
+  Workflow,
 } from 'lucide-react';
 import {
   type DragEvent,
@@ -50,6 +52,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { CustomEdge } from './CustomEdge';
 import { CustomNode } from './CustomNode';
 import { PALETTE_MIME, Palette } from './Palette';
+import { StickyNoteNode } from './StickyNoteNode';
 import { getNodeAccent, getNodeType } from './node-types';
 import { CANVAS_RECIPES } from './presets';
 import { CANVAS_LOCKED_KEY, type CanvasNode } from './store';
@@ -215,8 +218,10 @@ function CanvasInner() {
     onNodesChange,
     onEdgesChange,
     onConnect,
+    isConnectionValid,
     reconnectEdge,
     addNode,
+    addNote,
     applyRecipe,
     selectNode,
     selectEdge,
@@ -231,6 +236,7 @@ function CanvasInner() {
     redo,
     canUndo,
     canRedo,
+    autoLayout,
   } = useCanvasStore(
     useShallow((state) => ({
       nodeCatalog: state.nodeCatalog,
@@ -239,8 +245,10 @@ function CanvasInner() {
       onNodesChange: state.onNodesChange,
       onEdgesChange: state.onEdgesChange,
       onConnect: state.onConnect,
+      isConnectionValid: state.isConnectionValid,
       reconnectEdge: state.reconnectEdge,
       addNode: state.addNode,
+      addNote: state.addNote,
       applyRecipe: state.applyRecipe,
       selectNode: state.selectNode,
       selectEdge: state.selectEdge,
@@ -255,6 +263,7 @@ function CanvasInner() {
       redo: state.redo,
       canUndo: state.canUndo,
       canRedo: state.canRedo,
+      autoLayout: state.autoLayout,
     })),
   );
   const { fitView, screenToFlowPosition } = useReactFlow();
@@ -277,7 +286,7 @@ function CanvasInner() {
   const hasSelection = selectedNodes.length > 0 || selectedEdges.length > 0;
   const showSelectionOverlay = selectedNodes.length + selectedEdges.length > 1;
 
-  const nodeTypes: NodeTypes = useMemo(() => ({ openclaw: CustomNode }), []);
+  const nodeTypes: NodeTypes = useMemo(() => ({ openclaw: CustomNode, note: StickyNoteNode }), []);
   const edgeTypes = useMemo(() => ({ openclaw: CustomEdge }), []);
   const availableRecipes = useMemo(
     () =>
@@ -298,6 +307,33 @@ function CanvasInner() {
       duration: 280,
     });
   }, [fitView, selectedNodes]);
+
+  const arrangeCanvas = useCallback(() => {
+    const changed = autoLayout();
+    if (!changed) return;
+    window.setTimeout(() => {
+      void fitView({ padding: 0.2, duration: 320 });
+    }, 0);
+  }, [autoLayout, fitView]);
+
+  const validateConnection = useCallback(
+    (connection: Edge | Connection) =>
+      isConnectionValid({
+        source: connection.source,
+        target: connection.target,
+        sourceHandle: connection.sourceHandle ?? null,
+        targetHandle: connection.targetHandle ?? null,
+      }),
+    [isConnectionValid],
+  );
+
+  const addNoteToView = useCallback(() => {
+    const rect = document.querySelector('.react-flow')?.getBoundingClientRect();
+    const center = rect
+      ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+      : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    addNote(screenToFlowPosition(center));
+  }, [addNote, screenToFlowPosition]);
 
   const onDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -415,6 +451,12 @@ function CanvasInner() {
         window.dispatchEvent(new CustomEvent('canvas:save'));
         return;
       }
+
+      if (!ctrl && event.key.toLowerCase() === 'l') {
+        event.preventDefault();
+        arrangeCanvas();
+        return;
+      }
     };
 
     window.addEventListener('keydown', onKeyDown);
@@ -426,6 +468,7 @@ function CanvasInner() {
     hasSelection,
     pasteSelection,
     copySelection,
+    arrangeCanvas,
     redo,
     selectedNodes.length,
     undo,
@@ -439,6 +482,7 @@ function CanvasInner() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        isValidConnection={validateConnection}
         onNodeClick={onNodeClick}
         onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
@@ -619,6 +663,19 @@ function CanvasInner() {
               onClick={() => fitView({ padding: 0.18, duration: 300 })}
             >
               <Focus className="h-3.5 w-3.5" strokeWidth={2} />
+            </CanvasHudButton>
+            <CanvasHudButton
+              label="Add note"
+              onClick={addNoteToView}
+            >
+              <NotebookPen className="h-3.5 w-3.5" strokeWidth={2} />
+            </CanvasHudButton>
+            <CanvasHudButton
+              label="Auto layout (L)"
+              onClick={arrangeCanvas}
+              disabled={nodes.length < 2}
+            >
+              <Workflow className="h-3.5 w-3.5" strokeWidth={2} />
             </CanvasHudButton>
             <CanvasHudButton
               label="Fit selection"

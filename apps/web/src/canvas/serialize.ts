@@ -1,7 +1,7 @@
 import type { GraphEdge, GraphNode, NodeCatalog } from '@openclaw-wrapper/schemas';
 import { type Edge, MarkerType } from '@xyflow/react';
 import { getNodeType, mergeNodeDataWithDefaults } from './node-types';
-import type { CanvasNode } from './store';
+import { CANVAS_NOTE_NODE_TYPE, type CanvasNode } from './store';
 
 const CANVAS_WIDTH_KEY = '__canvasWidth';
 const CANVAS_HEIGHT_KEY = '__canvasHeight';
@@ -78,6 +78,25 @@ export function graphToNodes(
       (typeof persistedData.label === 'string' ? persistedData.label : undefined) ??
       descriptor?.label ??
       graphNode.type;
+    if (graphNode.type === CANVAS_NOTE_NODE_TYPE) {
+      return {
+        id: graphNode.id,
+        type: 'note',
+        position: graphNode.position,
+        data: {
+          ...persistedData,
+          nodeType: CANVAS_NOTE_NODE_TYPE,
+          label,
+          [CANVAS_LOCKED_KEY]: locked,
+        },
+        draggable: !locked,
+        connectable: false,
+        style: {
+          width: width ?? 240,
+          height: height ?? 180,
+        },
+      };
+    }
     return {
       id: graphNode.id,
       type: 'openclaw',
