@@ -21,6 +21,11 @@ import {
 } from './run-service.js';
 import { createContext } from './trpc.js';
 import { startWaitResumeService } from './wait-resume-service.js';
+import {
+  YouTubeWebSubError,
+  processYouTubeWebSubNotification,
+  verifyYouTubeWebSubChallenge,
+} from './youtube-service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -76,11 +81,39 @@ function sendTriggerSecurityError(reply: FastifyReply, error: FlowTriggerSecurit
   }
 }
 
+function sendYouTubeWebSubError(reply: FastifyReply, error: YouTubeWebSubError) {
+  switch (error.code) {
+    case 'SUBSCRIPTION_NOT_FOUND':
+      return reply.code(404).send({ ok: false, error: 'subscription_not_found' });
+    case 'MISSING_CHALLENGE':
+    case 'TOPIC_MISMATCH':
+    case 'INVALID_SIGNATURE':
+      return reply.code(400).send({
+        ok: false,
+        error: error.code.toLowerCase(),
+        message: error.message,
+      });
+    case 'CHANNEL_NOT_FOUND':
+    case 'HUB_REJECTED':
+      return reply.code(400).send({
+        ok: false,
+        error: error.code.toLowerCase(),
+        message: error.message,
+      });
+  }
+}
+
 async function main() {
   const app = Fastify({
     logger: { level: env.LOG_LEVEL },
     maxParamLength: 5_000,
   });
+
+  app.addContentTypeParser(
+    ['application/atom+xml', 'application/xml', 'text/xml'],
+    { parseAs: 'string' },
+    (_request, body, done) => done(null, body),
+  );
 
   await app.register(cors, { origin: env.CORS_ORIGIN, credentials: true });
 
@@ -138,6 +171,58 @@ async function main() {
         </body>
       </html>
     `);
+    },
+  );
+
+  app.get<{
+    Params: { subscriptionId: string };
+    Querystring: Record<string, unknown>;
+  }>('/webhooks/youtube/:subscriptionId', async (request, reply) => {
+    if (!UUID.test(request.params.subscriptionId)) {
+      return reply.code(400).type('text/plain').send('invalid subscription id');
+    }
+
+    try {
+      const challenge = await verifyYouTubeWebSubChallenge(
+        getDb(),
+        request.params.subscriptionId,
+        request.query,
+      );
+      return reply.type('text/plain').send(challenge);
+    } catch (error) {
+      if (error instanceof YouTubeWebSubError) {
+        return sendYouTubeWebSubError(reply, error);
+      }
+      throw error;
+    }
+  });
+
+  app.post<{ Params: { subscriptionId: string }; Body: string }>(
+    '/webhooks/youtube/:subscriptionId',
+    async (request, reply) => {
+      if (!UUID.test(request.params.subscriptionId)) {
+        return reply.code(400).send({
+          ok: false,
+          error: 'invalid_subscription_id',
+          message: 'subscriptionId must be a UUID',
+        });
+      }
+
+      try {
+        const result = await processYouTubeWebSubNotification(
+          getDb(),
+          request.params.subscriptionId,
+          typeof request.body === 'string' ? request.body : '',
+          request.headers,
+          { logger: app.log },
+        );
+        return reply.code(202).send(result);
+      } catch (error) {
+        if (error instanceof YouTubeWebSubError) {
+          return sendYouTubeWebSubError(reply, error);
+        }
+        throw error;
+      }
     },
   );
 

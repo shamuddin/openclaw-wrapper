@@ -11,3 +11,4 @@ export * from './node-type.js';
 export * from './ping.js';
 export * from './run.js';
 export * from './workspace.js';
+export * from './youtube.js';

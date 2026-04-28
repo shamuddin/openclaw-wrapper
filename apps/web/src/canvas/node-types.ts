@@ -65,7 +65,11 @@ type SummaryBuilder = (data: Record<string, unknown>) => string[];
 const SUMMARY_BUILDERS: Record<string, SummaryBuilder> = {
   'trigger.webhook': (data) => {
     const eventName = readString(data, 'eventName');
-    return filterSummary([eventName ? `event: ${eventName}` : 'accepts any JSON payload']);
+    const payloadMode = readString(data, 'payloadMode') || 'any';
+    return filterSummary([
+      eventName ? `event: ${eventName}` : 'event: any',
+      payloadMode === 'designed' ? 'designed JSON payload' : 'accepts any JSON payload',
+    ]);
   },
   'trigger.channel': (data) => {
     const channelType = readString(data, 'channelType') || 'channel';
@@ -185,6 +189,33 @@ const SUMMARY_BUILDERS: Record<string, SummaryBuilder> = {
       outputMode ? `mode: ${outputMode}` : '',
     ]);
   },
+  'tool.youtube-transcript': (data) => {
+    const video = readString(data, 'video');
+    const videoPath = readString(data, 'videoPath');
+    const provider = readString(data, 'provider') || 'transcriptapi';
+    const languages = readString(data, 'languages');
+    const outputMode = readString(data, 'outputMode') || 'merge';
+    return filterSummary([
+      `provider: ${provider}`,
+      video || (videoPath ? `path: ${videoPath}` : 'videoId or URL'),
+      languages ? `langs: ${languages}` : '',
+      outputMode === 'transcript-only' ? 'text only' : outputMode,
+    ]);
+  },
+  'tool.transcriptapi': (data) => {
+    const video = readString(data, 'video');
+    const videoPath = readString(data, 'videoPath');
+    const profileId = readString(data, 'profileId');
+    const outputMode = readString(data, 'outputMode') || 'merge';
+    const includeSegments = data.includeSegments !== false;
+    return filterSummary([
+      'TranscriptAPI.com',
+      profileId ? 'saved profile' : 'latest profile',
+      video || (videoPath ? `path: ${videoPath}` : 'url or videoId'),
+      includeSegments ? 'segments' : 'text only payload',
+      outputMode === 'transcript-only' ? 'text only' : outputMode,
+    ]);
+  },
   'tool.exec': (data) => {
     const command = readString(data, 'command');
     const approvalMode = readString(data, 'approvalMode');
@@ -246,8 +277,12 @@ const SUMMARY_BUILDERS: Record<string, SummaryBuilder> = {
     return ['auto truthy detection'];
   },
   'control.approval': (data) => {
+    const enabled = data.enabled !== false;
     const timeoutSeconds = readString(data, 'timeoutSeconds');
-    return filterSummary(['approval required', timeoutSeconds ? `${timeoutSeconds}s timeout` : '']);
+    return filterSummary([
+      enabled ? 'approval required' : 'approval disabled',
+      enabled && timeoutSeconds ? `${timeoutSeconds}s timeout` : '',
+    ]);
   },
   'control.wait': (data) => {
     const durationSeconds = readString(data, 'durationSeconds');

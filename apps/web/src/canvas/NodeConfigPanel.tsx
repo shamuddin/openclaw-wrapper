@@ -4,7 +4,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { notify } from '@/components/ui/toast-store';
 import { trpc } from '@/lib/trpc';
-import { AlertTriangle, Trash2 } from 'lucide-react';
+import { AlertTriangle, Sparkles, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -21,6 +21,11 @@ import { useCanvasStore } from './store';
 import { getBuilderIssues } from './validation';
 
 function resolveFieldOptions(field: NodeConfigField, nodeData: Record<string, unknown>) {
+  if (field.key === 'profileId' && nodeData.nodeType === 'tool.transcriptapi') {
+    const scopedOptions = field.options?.filter((option) => option.scope === 'transcriptapi');
+    return scopedOptions?.length ? scopedOptions : field.options;
+  }
+
   if (field.key !== 'skillName') {
     if (field.key !== 'modelOverride') {
       return field.options;
@@ -64,6 +69,23 @@ function getToolSpecificHint(
   nodeType: string,
   nodeData: Record<string, unknown>,
 ): { tone: 'info' | 'warning'; message: string } | null {
+  if (nodeType === 'trigger.webhook') {
+    const payloadMode =
+      typeof nodeData.payloadMode === 'string' ? nodeData.payloadMode.trim() : 'any';
+    if (payloadMode === 'designed') {
+      return {
+        tone: 'info',
+        message:
+          'Designed payload is used for samples, copying, and documentation. The webhook endpoint still receives the caller JSON body.',
+      };
+    }
+    return {
+      tone: 'info',
+      message:
+        'Any JSON payload is accepted by the webhook endpoint. Add a designed payload if callers need a fixed body shape.',
+    };
+  }
+
   if (nodeType === 'tool.web-search') {
     const provider =
       typeof nodeData.provider === 'string' ? nodeData.provider.trim().toLowerCase() : 'duckduckgo';
@@ -134,6 +156,14 @@ function getToolSpecificHint(
           'Browser Lite can only follow links already present in the fetched HTML. It supports text:, href:, exact:text:, exact:href:, and index: hints, but it does not click JS-rendered UI.',
       };
     }
+  }
+
+  if (nodeType === 'tool.transcriptapi') {
+    return {
+      tone: 'warning',
+      message:
+        'TranscriptAPI needs a saved Channels profile. Configure it in Channels -> New -> TranscriptAPI.com, then select that profile here.',
+    };
   }
 
   if (nodeType === 'tool.payload-template') {
@@ -257,6 +287,43 @@ function InputField({
   }
 }
 
+function renderDesignedWebhookPayload(value: unknown): {
+  valid: boolean;
+  preview: string;
+  message: string;
+} {
+  const raw = typeof value === 'string' ? value : '';
+  if (!raw.trim()) {
+    return {
+      valid: false,
+      preview: '{}',
+      message: 'Enter a JSON object to document the webhook payload.',
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(raw.replaceAll('{{now}}', new Date().toISOString()));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {
+        valid: false,
+        preview: raw,
+        message: 'Payload must be a JSON object, not an array or primitive.',
+      };
+    }
+    return {
+      valid: true,
+      preview: JSON.stringify(parsed, null, 2),
+      message: 'Valid JSON object. This is what Run webhook sample and Copy payload will use.',
+    };
+  } catch (error) {
+    return {
+      valid: false,
+      preview: raw,
+      message: error instanceof Error ? error.message : 'Payload is not valid JSON.',
+    };
+  }
+}
+
 export function NodeConfigPanel() {
   const utils = trpc.useUtils();
   const {
@@ -264,6 +331,7 @@ export function NodeConfigPanel() {
     nodes,
     edges,
     flowId,
+    flowName,
     publishedVersion,
     selectedNode,
     selectedEdge,
@@ -276,6 +344,7 @@ export function NodeConfigPanel() {
       nodes: state.nodes,
       edges: state.edges,
       flowId: state.flowId,
+      flowName: state.flowName,
       publishedVersion: state.publishedVersion,
       selectedNode: state.nodes.find((n) => n.selected) ?? null,
       selectedEdge: state.edges.find((e) => e.selected) ?? null,
@@ -327,6 +396,40 @@ export function NodeConfigPanel() {
       });
     },
   });
+
+  const designWebhookPayloadMutation = trpc.nodes.designWebhookPayload.useMutation({
+    onSuccess(result) {
+      if (!selectedNode) return;
+      updateNodeData(selectedNode.id, {
+        payloadMode: 'designed',
+        payloadTemplate: result.payloadText,
+      });
+      notify({
+        tone: 'success',
+        title: 'Payload drafted',
+        message: 'OpenClaw generated a designed webhook payload from the linked nodes.',
+      });
+    },
+    onError(error) {
+      notify({
+        tone: 'error',
+        title: 'Payload design failed',
+        message: error.message,
+        durationMs: 7000,
+      });
+    },
+  });
+
+  const designWebhookPayload = () => {
+    if (!selectedNode || selectedNode.data.nodeType !== 'trigger.webhook') return;
+    designWebhookPayloadMutation.mutate({
+      nodeId: selectedNode.id,
+      ...(flowId ? { flowId } : {}),
+      flowName,
+      nodes: nodesToGraph(nodes),
+      edges: edgesToGraph(edges),
+    });
+  };
 
   useEffect(() => {
     if (!selectedNodeId && !clawHubOpen && !clawHubQuery && !clawHubDebouncedQuery) {
@@ -460,6 +563,39 @@ export function NodeConfigPanel() {
             }`}
           >
             {toolSpecificHint.message}
+            {selectedNode.data.nodeType === 'tool.transcriptapi' ? (
+              <div className="mt-2">
+                <Link
+                  href="/channels?template=transcript-api"
+                  className="inline-flex rounded-md border border-amber-300 bg-white px-2 py-1 text-[11px] font-medium text-amber-800 transition hover:bg-amber-100"
+                >
+                  Configure API key
+                </Link>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {selectedNode.data.nodeType === 'trigger.webhook' ? (
+          <div className="rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-2 text-xs text-violet-800">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-medium">AI payload designer</p>
+                <p className="mt-1 text-violet-700">
+                  Fill AI payload instructions below, then ask OpenClaw to inspect this webhook and
+                  its linked downstream nodes.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={designWebhookPayload}
+                loading={designWebhookPayloadMutation.isPending}
+              >
+                <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
+                Design
+              </Button>
+            </div>
           </div>
         ) : null}
 
@@ -653,6 +789,37 @@ export function NodeConfigPanel() {
             </div>
           );
           })}
+
+        {selectedNode.data.nodeType === 'trigger.webhook' &&
+        selectedNode.data.payloadMode === 'designed' ? (
+          <div className="rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-800">
+            {(() => {
+              const designed = renderDesignedWebhookPayload(selectedNode.data.payloadTemplate);
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">Designed payload preview</span>
+                    <span
+                      className={`rounded-md border px-2 py-0.5 text-[10px] font-medium ${
+                        designed.valid
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-amber-200 bg-amber-50 text-amber-700'
+                      }`}
+                    >
+                      {designed.valid ? 'valid' : 'needs fix'}
+                    </span>
+                  </div>
+                  <pre className="max-h-48 overflow-auto rounded-md bg-white/80 p-2 text-[10px] text-slate-700">
+                    {designed.preview}
+                  </pre>
+                  <p className={designed.valid ? 'text-sky-700' : 'text-amber-800'}>
+                    {designed.message}
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
+        ) : null}
 
         <p className="text-[11px] text-gray-400">
           Press{' '}

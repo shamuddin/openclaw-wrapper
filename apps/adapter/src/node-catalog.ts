@@ -85,6 +85,9 @@ export const NODE_CATALOG: NodeCatalog = {
       outputs: [{ name: 'out', label: 'Payload', dataType: 'object' }],
       defaults: {
         eventName: '',
+        payloadMode: 'any',
+        payloadDesignInstructions: '',
+        payloadTemplate: '{\n  "message": "Hello from webhook",\n  "createdAt": "{{now}}"\n}',
         notes: '',
       },
       fields: [
@@ -94,6 +97,34 @@ export const NODE_CATALOG: NodeCatalog = {
           type: 'text',
           placeholder: 'customer.message.received',
           description: 'Optional event key used to match inbound webhook payloads.',
+        },
+        {
+          key: 'payloadMode',
+          label: 'Payload mode',
+          type: 'select',
+          options: [
+            { label: 'Accept any JSON payload', value: 'any' },
+            { label: 'Use designed JSON payload', value: 'designed' },
+          ],
+          description:
+            'Designed mode documents and tests a specific JSON body for callers. The raw webhook endpoint still accepts JSON at runtime.',
+        },
+        {
+          key: 'payloadDesignInstructions',
+          label: 'AI payload instructions',
+          type: 'textarea',
+          placeholder:
+            'Tell the AI what payload you need. Example: Only create { "url": "https://youtu.be/..." } for this YouTube flow.',
+          description:
+            'Used only by the AI payload designer. The generated JSON is still editable before saving.',
+        },
+        {
+          key: 'payloadTemplate',
+          label: 'Designed JSON payload',
+          type: 'textarea',
+          placeholder: '{\n  "url": "https://youtu.be/..."\n}',
+          description:
+            'Used by the Run webhook sample and Copy payload actions. Use {{now}} for the current ISO timestamp.',
         },
         {
           key: 'notes',
@@ -399,6 +430,7 @@ export const NODE_CATALOG: NodeCatalog = {
       defaults: {
         agentId: '',
         instructions: '',
+        inputTemplate: '',
         modelProvider: '',
         modelOverride: '',
         sessionKey: '',
@@ -416,6 +448,14 @@ export const NODE_CATALOG: NodeCatalog = {
           label: 'Run instructions',
           type: 'textarea',
           placeholder: 'Classify the conversation and return a concise routing decision.',
+        },
+        {
+          key: 'inputTemplate',
+          label: 'Input template',
+          type: 'textarea',
+          placeholder: '{{input}}',
+          description:
+            'Optional payload sent to the agent. Use this to trim large tool outputs before the model call.',
         },
         {
           key: 'modelProvider',
@@ -933,6 +973,185 @@ export const NODE_CATALOG: NodeCatalog = {
       ],
     },
     {
+      type: 'tool.youtube-transcript',
+      label: 'YouTube Transcript',
+      category: 'tools',
+      source: 'wrapper-core',
+      description: 'Extracts the full transcript for a YouTube video URL or video ID.',
+      icon: 'Captions',
+      availability: {
+        status: 'supported',
+        note: 'Available through TranscriptAPI.com by default. Set TRANSCRIPT_API_KEY in production.',
+      },
+      capabilities: [
+        {
+          label: 'Video URL or ID input',
+          detail:
+            'Accepts watch URLs, Shorts URLs, youtu.be links, embed/live URLs, or an 11-character video ID.',
+          tone: 'supported',
+        },
+        {
+          label: 'TranscriptAPI provider',
+          detail:
+            'Uses the production TranscriptAPI.com REST endpoint to retrieve transcript segments.',
+          tone: 'supported',
+        },
+      ],
+      inputs: [{ name: 'in', label: 'Video payload', dataType: 'object', required: true }],
+      outputs: [{ name: 'out', label: 'Transcript payload', dataType: 'object' }],
+      defaults: {
+        provider: 'transcriptapi',
+        video: '',
+        videoPath: 'videoId',
+        languages: 'en',
+        preserveFormatting: false,
+        includeSegments: true,
+        outputMode: 'merge',
+      },
+      fields: [
+        {
+          key: 'provider',
+          label: 'Provider',
+          type: 'select',
+          options: [
+            { label: 'TranscriptAPI.com', value: 'transcriptapi' },
+            { label: 'YouTube captions library', value: 'youtube-transcript-api' },
+          ],
+          description:
+            'TranscriptAPI.com is the production provider. The captions library remains available for local or low-cost testing.',
+        },
+        {
+          key: 'video',
+          label: 'Video URL or ID',
+          type: 'text',
+          placeholder: '{{videoUrl}}',
+          description:
+            'Optional template. Leave blank to resolve from the configured payload path.',
+        },
+        {
+          key: 'videoPath',
+          label: 'Video payload path',
+          type: 'text',
+          placeholder: 'videoId',
+          description:
+            'Used when Video URL or ID is blank. Common paths: videoId, videoUrl, url.',
+        },
+        {
+          key: 'languages',
+          label: 'Languages',
+          type: 'text',
+          placeholder: 'en,hi',
+          description: 'Comma-separated transcript language preference order.',
+        },
+        {
+          key: 'preserveFormatting',
+          label: 'Preserve formatting',
+          type: 'boolean',
+        },
+        {
+          key: 'includeSegments',
+          label: 'Include timestamp segments',
+          type: 'boolean',
+        },
+        {
+          key: 'outputMode',
+          label: 'Output mode',
+          type: 'select',
+          options: [
+            { label: 'Merge into payload', value: 'merge' },
+            { label: 'Replace with transcript payload', value: 'replace' },
+            { label: 'Transcript text only', value: 'transcript-only' },
+          ],
+        },
+      ],
+    },
+    {
+      type: 'tool.transcriptapi',
+      label: 'TranscriptAPI',
+      category: 'tools',
+      source: 'wrapper-core',
+      description: 'Fetches YouTube transcripts through TranscriptAPI.com.',
+      icon: 'Captions',
+      availability: {
+        status: 'supported',
+        note: 'Requires TRANSCRIPT_API_KEY in the adapter environment.',
+      },
+      capabilities: [
+        {
+          label: 'Production transcript API',
+          detail:
+            'Calls TranscriptAPI.com directly instead of scraping browser pages or relying on local captions extraction.',
+          tone: 'supported',
+        },
+        {
+          label: 'YouTube URL or ID input',
+          detail:
+            'Accepts watch URLs, youtu.be links, Shorts URLs, or an 11-character video ID.',
+          tone: 'supported',
+        },
+        {
+          label: 'Agent-ready payload',
+          detail:
+            'Returns transcript text, segments, title, duration, video ID, and source URL in the same shape used by YouTube article flows.',
+          tone: 'supported',
+        },
+      ],
+      inputs: [{ name: 'in', label: 'Video payload', dataType: 'object', required: true }],
+      outputs: [{ name: 'out', label: 'Transcript payload', dataType: 'object' }],
+      defaults: {
+        profileId: '',
+        video: '',
+        videoPath: 'url',
+        includeSegments: true,
+        outputMode: 'merge',
+      },
+      fields: [
+        {
+          key: 'profileId',
+          label: 'TranscriptAPI profile',
+          type: 'select',
+          placeholder: 'Use latest saved TranscriptAPI profile',
+          description:
+            'Save this in Channels -> TranscriptAPI.com. Leave blank to use the latest saved TranscriptAPI profile.',
+        },
+        {
+          key: 'video',
+          label: 'YouTube URL or ID',
+          type: 'text',
+          placeholder: '{{url}}',
+          description:
+            'Optional template. Use this when the incoming payload shape is known.',
+        },
+        {
+          key: 'videoPath',
+          label: 'Payload path',
+          type: 'text',
+          placeholder: 'url',
+          description:
+            'Used when YouTube URL or ID is blank. Common paths: url, videoUrl, videoId.',
+        },
+        {
+          key: 'includeSegments',
+          label: 'Include timestamp segments',
+          type: 'boolean',
+          description:
+            'Used by structured JSON output modes. Transcript text only always returns plain text without timestamps.',
+        },
+        {
+          key: 'outputMode',
+          label: 'Output mode',
+          type: 'select',
+          options: [
+            { label: 'Merge into payload', value: 'merge' },
+            { label: 'Replace with transcript payload', value: 'replace' },
+            { label: 'Transcript text only', value: 'transcript-only' },
+          ],
+          description:
+            'Merge mode writes youtubeTranscript and transcriptapi objects for easy agent templating.',
+        },
+      ],
+    },
+    {
       type: 'tool.exec',
       label: 'Exec',
       category: 'tools',
@@ -1293,10 +1512,17 @@ export const NODE_CATALOG: NodeCatalog = {
         { name: 'rejected', label: 'Rejected', dataType: 'any' },
       ],
       defaults: {
+        enabled: true,
         reason: '',
         timeoutSeconds: '300',
       },
       fields: [
+        {
+          key: 'enabled',
+          label: 'Require approval',
+          type: 'boolean',
+          description: 'When disabled, this node passes through the approved path without pausing.',
+        },
         {
           key: 'reason',
           label: 'Approval reason',
@@ -1807,6 +2033,12 @@ export function buildNodeCatalog(
     (field) => field.key === 'channelProfileId',
     channelProfileOptions,
     'Use saved channel profile',
+  );
+  setFieldSelectOptions(
+    catalog,
+    (field) => field.key === 'profileId',
+    channelProfileOptions,
+    'Use latest saved profile',
   );
 
   setFieldOptions(catalog, (field) => field.key === 'channelType', channelOptions);

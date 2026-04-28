@@ -376,6 +376,69 @@ describe('executePublishedFlow', () => {
     );
   });
 
+  it('passes text-only transcript input into transcript templates for agent nodes', async () => {
+    runOpenClawAgentMock.mockResolvedValueOnce({
+      agentId: 'main',
+      runId: 'gateway_run_transcript',
+      sessionKey: 'agent:main:flow:run',
+      status: 'ok',
+      replyText: 'Article draft',
+      previewItems: [{ role: 'assistant', text: 'Article draft' }],
+      previewStatus: 'ok',
+    });
+
+    const transcript = 'Anthropic launched Claw Design and explained the workflow.';
+    const result = await executePublishedFlow({
+      runId: 'run_transcript_agent',
+      flowId: 'flow_transcript_agent',
+      flowVersion: 1,
+      trigger: { type: 'webhook', label: 'Inbound webhook' },
+      input: transcript,
+      now: makeClock(
+        '2026-04-28T12:00:00.000Z',
+        '2026-04-28T12:00:01.000Z',
+        '2026-04-28T12:00:02.000Z',
+        '2026-04-28T12:00:03.000Z',
+        '2026-04-28T12:00:04.000Z',
+      ),
+      nodes: [
+        {
+          id: 'trigger',
+          type: 'trigger.webhook',
+          position: { x: 0, y: 0 },
+          data: {},
+        },
+        {
+          id: 'agent',
+          type: 'action.agent',
+          position: { x: 160, y: 0 },
+          data: {
+            agentId: 'main',
+            inputTemplate:
+              '{"videoUrl":"{{youtubeTranscript.videoUrl}}","videoId":"{{youtubeTranscript.videoId}}","transcript":"{{youtubeTranscript.transcript}}"}',
+          },
+        },
+      ],
+      edges: [
+        {
+          id: 'edge',
+          source: 'trigger',
+          sourcePort: 'out',
+          target: 'agent',
+          targetPort: 'in',
+        },
+      ],
+    });
+
+    expect(result.status).toBe('succeeded');
+    expect(runOpenClawAgentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: 'main',
+        message: expect.stringContaining(transcript),
+      }),
+    );
+  });
+
   it('keeps a skill node testable offline by returning a clearly marked fallback result', async () => {
     runOpenClawSkillMock.mockRejectedValueOnce(new Error('connection closed'));
 

@@ -22,6 +22,10 @@ import {
 } from './openclaw.js';
 import { runAdapterExec } from './system-exec.js';
 import { runAdapterWebSearch } from './web-search.js';
+import {
+  fetchTranscriptApiYouTubeTranscript,
+  fetchYouTubeTranscript,
+} from './youtube-transcript.js';
 
 export interface ExecuteFlowInput {
   runId: string;
@@ -38,6 +42,8 @@ export interface ExecuteFlowInput {
   executeHttpNode?: ExecuteHttpNode;
   executeBrowserNode?: ExecuteBrowserNode;
   executeWebSearchNode?: ExecuteWebSearchNode;
+  executeYouTubeTranscriptNode?: ExecuteYouTubeTranscriptNode;
+  executeTranscriptApiNode?: ExecuteTranscriptApiNode;
   executeShapePayloadNode?: ExecuteShapePayloadNode;
   executeExecNode?: ExecuteExecNode;
   executeChannelReplyNode?: ExecuteChannelReplyNode;
@@ -176,6 +182,44 @@ export type ExecuteWebSearchNode = (params: {
   flowVersion: number;
   node: GraphNode;
   nodeInput: unknown;
+  abortSignal?: AbortSignal;
+}) => Promise<{
+  output: unknown;
+  result: unknown;
+  logs?: Array<{
+    level: 'debug' | 'info' | 'warn' | 'error';
+    message: string;
+    data?: unknown;
+  }>;
+}>;
+
+export type ExecuteYouTubeTranscriptNode = (params: {
+  runId: string;
+  flowId: string;
+  flowVersion: number;
+  node: GraphNode;
+  nodeInput: unknown;
+  transcriptApiKey?: string;
+  transcriptApiBaseUrl?: string;
+  abortSignal?: AbortSignal;
+}) => Promise<{
+  output: unknown;
+  result: unknown;
+  logs?: Array<{
+    level: 'debug' | 'info' | 'warn' | 'error';
+    message: string;
+    data?: unknown;
+  }>;
+}>;
+
+export type ExecuteTranscriptApiNode = (params: {
+  runId: string;
+  flowId: string;
+  flowVersion: number;
+  node: GraphNode;
+  nodeInput: unknown;
+  transcriptApiKey?: string;
+  transcriptApiBaseUrl?: string;
   abortSignal?: AbortSignal;
 }) => Promise<{
   output: unknown;
@@ -869,7 +913,15 @@ function toBooleanBranch(value: unknown): boolean {
   return false;
 }
 
-function formatAgentMessage(nodeInput: unknown): string {
+function formatAgentMessage(nodeInput: unknown, inputTemplate = ''): string {
+  const trimmedTemplate = inputTemplate.trim();
+  if (trimmedTemplate.length > 0) {
+    const rendered = renderInputTemplate(trimmedTemplate, nodeInput).trim();
+    if (rendered.length > 0) {
+      return rendered;
+    }
+  }
+
   if (typeof nodeInput === 'string') {
     const trimmed = nodeInput.trim();
     if (trimmed.length > 0) return trimmed;
@@ -884,7 +936,14 @@ function formatAgentMessage(nodeInput: unknown): string {
 
 function renderInputTemplate(template: string, input: unknown): string {
   return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, rawPath: string) => {
-    const value = rawPath === 'input' ? input : getPathValue(input, rawPath);
+    let value = rawPath === 'input' ? input : getPathValue(input, rawPath);
+    if (
+      value === undefined &&
+      typeof input === 'string' &&
+      rawPath.split('.').at(-1)?.toLowerCase() === 'transcript'
+    ) {
+      value = input;
+    }
     if (value === undefined || value === null) return '';
     return typeof value === 'string' ? value : stringifyValue(value);
   });
@@ -1909,8 +1968,8 @@ async function executeDefaultApprovalNode(params: {
 }): Promise<{
   output: unknown;
   result: unknown;
-  waitUntil: Date;
-  approvalRequest: {
+  waitUntil?: Date;
+  approvalRequest?: {
     requestType: 'control' | 'exec';
     reason?: string;
     timeoutSeconds: number;
@@ -1918,6 +1977,18 @@ async function executeDefaultApprovalNode(params: {
     approvalMode?: 'ask' | 'elevated' | 'trusted';
   };
 }> {
+  if (params.node.data.enabled === false || params.node.data.enabled === 'false') {
+    return {
+      output: params.nodeInput,
+      result: {
+        output: params.nodeInput,
+        approved: true,
+        skipped: true,
+        nextPorts: ['approved'],
+      },
+    };
+  }
+
   const timeoutSeconds = parsePositiveIntegerConfig(
     params.node,
     'timeoutSeconds',
@@ -2290,6 +2361,7 @@ async function executeDefaultAgentNode(params: {
       nodeId: params.node.id,
     });
   const instructions = getStringConfig(params.node, 'instructions').trim();
+  const inputTemplate = getStringConfig(params.node, 'inputTemplate');
   const modelOverride = getStringConfig(params.node, 'modelOverride').trim();
   const waitTimeoutMs = parsePositiveIntegerConfig(
     params.node,
@@ -2303,7 +2375,7 @@ async function executeDefaultAgentNode(params: {
     agentResult = await runOpenClawAgent({
       agentId,
       sessionKey,
-      message: formatAgentMessage(params.nodeInput),
+      message: formatAgentMessage(params.nodeInput, inputTemplate),
       timeoutMs: waitTimeoutMs,
       idempotencyKey: `${params.runId}:${params.node.id}`,
       ...(instructions ? { extraSystemPrompt: instructions } : {}),
@@ -2312,6 +2384,11 @@ async function executeDefaultAgentNode(params: {
     });
   } catch (error) {
     if (!isGatewayConnectivityFailure(error)) {
+      if (errorMessage(error).trim().toLowerCase() === 'timeout') {
+        throw new Error(
+          `Agent "${agentId}" timed out after ${waitTimeoutMs}ms. Increase this node's wait timeout or reduce the input payload.`,
+        );
+      }
       throw error;
     }
 
@@ -3012,6 +3089,185 @@ async function executeDefaultShapePayloadNode(params: {
   };
 }
 
+export async function executeDefaultYouTubeTranscriptNode(params: {
+  runId: string;
+  flowId: string;
+  flowVersion: number;
+  node: GraphNode;
+  nodeInput: unknown;
+  transcriptApiKey?: string;
+  transcriptApiBaseUrl?: string;
+  abortSignal?: AbortSignal;
+}): Promise<{
+  output: unknown;
+  result: unknown;
+  logs: Array<{
+    level: 'debug' | 'info' | 'warn' | 'error';
+    message: string;
+    data?: unknown;
+  }>;
+}> {
+  const explicitVideo = renderInputTemplate(getStringConfig(params.node, 'video'), params.nodeInput)
+    .trim();
+  const videoPath = getStringConfig(params.node, 'videoPath', 'videoId').trim() || 'videoId';
+  const source =
+    explicitVideo ||
+    getStringPathValue(params.nodeInput, videoPath) ||
+    getFirstStringPathValue(params.nodeInput, ['videoId', 'videoUrl', 'url', 'input.videoId', 'input.url']);
+  if (!source) {
+    throw new Error('YouTube Transcript could not resolve a video ID or URL from the payload.');
+  }
+
+  const languageConfig = getStringConfig(params.node, 'languages', 'en');
+  const languages = languageConfig
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const provider =
+    getStringConfig(params.node, 'provider', 'transcriptapi').trim() || 'transcriptapi';
+  const preserveFormatting = getBooleanConfig(params.node, 'preserveFormatting', false);
+  const includeSegments = getBooleanConfig(params.node, 'includeSegments', true);
+  const outputMode = getStringConfig(params.node, 'outputMode', 'merge').trim() || 'merge';
+  const transcript =
+    provider === 'youtube-transcript-api' || provider === 'captions'
+      ? await fetchYouTubeTranscript({
+          videoIdOrUrl: source,
+          languages,
+          preserveFormatting,
+          ...(params.abortSignal ? { signal: params.abortSignal } : {}),
+        })
+      : await fetchTranscriptApiYouTubeTranscript({
+          videoIdOrUrl: source,
+          format: outputMode === 'transcript-only' ? 'text' : 'json',
+          includeTimestamp: outputMode === 'transcript-only' ? false : includeSegments,
+          sendMetadata: true,
+          ...(params.transcriptApiKey ? { apiKey: params.transcriptApiKey } : {}),
+          ...(params.transcriptApiBaseUrl ? { baseUrl: params.transcriptApiBaseUrl } : {}),
+          ...(params.abortSignal ? { signal: params.abortSignal } : {}),
+        });
+  const envelope = {
+    ...transcript,
+    ...(includeSegments ? {} : { segments: undefined }),
+    requestedLanguages: languages.length > 0 ? languages : ['en'],
+    input: params.nodeInput,
+  };
+  const output =
+    outputMode === 'transcript-only'
+      ? transcript.transcript
+      : outputMode === 'replace'
+        ? envelope
+        : mergeObjectOutput(params.nodeInput, {
+            youtube: {
+              transcript: envelope,
+            },
+            youtubeTranscript: envelope,
+          });
+
+  return {
+    output,
+    result: {
+      ...envelope,
+      output,
+    },
+    logs: [
+      {
+        level: 'info',
+        message: `Fetched YouTube transcript for "${transcript.videoId}" with ${transcript.segmentCount} segment${transcript.segmentCount === 1 ? '' : 's'}`,
+        data: {
+          videoId: transcript.videoId,
+          provider: transcript.provider ?? provider,
+          language: transcript.language,
+          segmentCount: transcript.segmentCount,
+          characterCount: transcript.characterCount,
+          outputMode,
+        },
+      },
+    ],
+  };
+}
+
+export async function executeDefaultTranscriptApiNode(params: {
+  runId: string;
+  flowId: string;
+  flowVersion: number;
+  node: GraphNode;
+  nodeInput: unknown;
+  transcriptApiKey?: string;
+  transcriptApiBaseUrl?: string;
+  abortSignal?: AbortSignal;
+}): Promise<{
+  output: unknown;
+  result: unknown;
+  logs: Array<{
+    level: 'debug' | 'info' | 'warn' | 'error';
+    message: string;
+    data?: unknown;
+  }>;
+}> {
+  const explicitVideo = renderInputTemplate(getStringConfig(params.node, 'video'), params.nodeInput)
+    .trim();
+  const videoPath = getStringConfig(params.node, 'videoPath', 'url').trim() || 'url';
+  const source =
+    explicitVideo ||
+    getStringPathValue(params.nodeInput, videoPath) ||
+    getFirstStringPathValue(params.nodeInput, ['url', 'videoUrl', 'videoId', 'input.url', 'input.videoUrl', 'input.videoId']);
+  if (!source) {
+    throw new Error('TranscriptAPI node could not resolve a YouTube URL or video ID from the payload.');
+  }
+
+  const includeSegments = getBooleanConfig(params.node, 'includeSegments', true);
+  const outputMode = getStringConfig(params.node, 'outputMode', 'merge').trim() || 'merge';
+  const transcript = await fetchTranscriptApiYouTubeTranscript({
+    videoIdOrUrl: source,
+    format: outputMode === 'transcript-only' ? 'text' : 'json',
+    includeTimestamp: outputMode === 'transcript-only' ? false : includeSegments,
+    sendMetadata: true,
+    ...(params.transcriptApiKey ? { apiKey: params.transcriptApiKey } : {}),
+    ...(params.transcriptApiBaseUrl ? { baseUrl: params.transcriptApiBaseUrl } : {}),
+    ...(params.abortSignal ? { signal: params.abortSignal } : {}),
+  });
+  const envelope = {
+    ...transcript,
+    ...(includeSegments ? {} : { segments: undefined }),
+    input: params.nodeInput,
+  };
+  const output =
+    outputMode === 'transcript-only'
+      ? transcript.transcript
+      : outputMode === 'replace'
+        ? envelope
+        : mergeObjectOutput(params.nodeInput, {
+            transcriptapi: envelope,
+            youtube: {
+              transcript: envelope,
+            },
+            youtubeTranscript: envelope,
+          });
+
+  return {
+    output,
+    result: {
+      ...envelope,
+      output,
+    },
+    logs: [
+      {
+        level: 'info',
+        message: `Fetched TranscriptAPI transcript for "${transcript.videoId}" with ${transcript.segmentCount} segment${transcript.segmentCount === 1 ? '' : 's'}`,
+        data: {
+          videoId: transcript.videoId,
+          provider: transcript.provider,
+          title: transcript.title,
+          duration: transcript.duration,
+          segmentCount: transcript.segmentCount,
+          characterCount: transcript.characterCount,
+          outputMode,
+        },
+      },
+    ],
+  };
+}
+
 async function executeDefaultExecNode(params: {
   runId: string;
   flowId: string;
@@ -3494,6 +3750,82 @@ async function executeNode(
         nextPorts: ['out'],
         extraEvents,
         result: searchExecution.result,
+      };
+    }
+
+    case 'tool.youtube-transcript': {
+      const executeYouTubeTranscriptNode =
+        input.executeYouTubeTranscriptNode ?? executeDefaultYouTubeTranscriptNode;
+      const transcriptExecution = await executeYouTubeTranscriptNode({
+        runId: input.runId,
+        flowId: input.flowId,
+        flowVersion: input.flowVersion,
+        node,
+        nodeInput,
+        abortSignal: input.abortSignal,
+      });
+
+      const extraEvents: PendingRunEvent[] = [];
+      for (const log of transcriptExecution.logs ?? []) {
+        const logAt = now();
+        extraEvents.push({
+          eventType: 'run.log',
+          event: {
+            type: 'run.log',
+            runId: input.runId,
+            at: logAt.toISOString(),
+            level: log.level,
+            nodeId: node.id,
+            message: log.message,
+            data: log.data,
+          },
+          createdAt: logAt,
+        });
+      }
+
+      return {
+        output: transcriptExecution.output,
+        nextPorts: ['out'],
+        extraEvents,
+        result: transcriptExecution.result,
+      };
+    }
+
+    case 'tool.transcriptapi': {
+      const executeTranscriptApiNode =
+        input.executeTranscriptApiNode ?? executeDefaultTranscriptApiNode;
+      const transcriptExecution = await executeTranscriptApiNode({
+        runId: input.runId,
+        flowId: input.flowId,
+        flowVersion: input.flowVersion,
+        node,
+        nodeInput,
+        abortSignal: input.abortSignal,
+      });
+
+      const extraEvents: PendingRunEvent[] = [];
+      for (const log of transcriptExecution.logs ?? []) {
+        const logAt = now();
+        extraEvents.push({
+          eventType: 'run.log',
+          event: {
+            type: 'run.log',
+            runId: input.runId,
+            at: logAt.toISOString(),
+            level: log.level,
+            nodeId: node.id,
+            message: log.message,
+            data: log.data,
+          },
+          createdAt: logAt,
+        });
+      }
+
+      return {
+        output: transcriptExecution.output,
+        nextPorts: ['out'],
+        extraEvents,
+        result: transcriptExecution.result,
       };
     }
 

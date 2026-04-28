@@ -65,6 +65,11 @@
       "types": "./dist/workspace.d.ts",
       "import": "./dist/workspace.js",
       "default": "./dist/workspace.js"
+    },
+    "./youtube": {
+      "types": "./dist/youtube.d.ts",
+      "import": "./dist/youtube.js",
+      "default": "./dist/youtube.js"
     }
   },
   "scripts": {

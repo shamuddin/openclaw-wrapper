@@ -15,6 +15,10 @@ import {
 } from '../run-service.js';
 import { router, workspaceProcedure } from '../trpc.js';
 import { parse } from '../validate.js';
+import {
+  executeYouTubeLinkedRunInBackground,
+  syncYouTubeIngestionFromRun,
+} from '../youtube-service.js';
 
 const Uuid = Type.String({ format: 'uuid', minLength: 36, maxLength: 36 });
 
@@ -168,6 +172,7 @@ export const runsRouter = router({
       cancelledByUserId: ctx.user.id,
     });
     if (!run) throw new TRPCError({ code: 'NOT_FOUND', message: 'run not found' });
+    await syncYouTubeIngestionFromRun(ctx.db, run.id);
     return run;
   }),
 
@@ -359,7 +364,9 @@ export const runsRouter = router({
           throw new TRPCError({ code: 'NOT_FOUND', message: 'run not found' });
         }
         if (run.status === 'running') {
-          executeRunInBackground(ctx.db, run.id);
+          executeYouTubeLinkedRunInBackground(ctx.db, run.id);
+        } else {
+          await syncYouTubeIngestionFromRun(ctx.db, run.id);
         }
         return run;
       } catch (error) {

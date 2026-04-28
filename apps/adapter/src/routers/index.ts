@@ -12,6 +12,7 @@ import { pingRouter } from './ping.js';
 import { runsRouter } from './runs.js';
 import { skillsRouter } from './skills.js';
 import { workspacesRouter } from './workspaces.js';
+import { youtubeRouter } from './youtube.js';
 
 export const appRouter = router({
   automation: automationRouter,
@@ -21,6 +22,7 @@ export const appRouter = router({
   memory: memoryRouter,
   ops: opsRouter,
   workspaces: workspacesRouter,
+  youtube: youtubeRouter,
   channels: channelsRouter,
   cron: cronRouter,
   flows: flowsRouter,

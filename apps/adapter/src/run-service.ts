@@ -17,7 +17,7 @@ import type {
 import type { DelegatedRunRecord, RunLineage } from '@openclaw-wrapper/schemas/run';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { syncAutomationRunState, trackAutomationRunStarted } from './automation-service.js';
-import { getChannelExecutionProfile } from './channel-profiles.js';
+import { getChannelExecutionProfile, loadTranscriptApiProfileSettings } from './channel-profiles.js';
 import type { Db } from './db/client.js';
 import {
   automationTaskFlows,
@@ -34,6 +34,8 @@ import {
 import {
   executeChannelReplyNodeWithProfile,
   executeChannelRouteNodeWithProfile,
+  executeDefaultYouTubeTranscriptNode,
+  executeDefaultTranscriptApiNode,
   executeDefaultThreadBindNode,
   executeMemoryWriteNodeWithPersistence,
   executePublishedFlow,
@@ -45,8 +47,171 @@ import {
   persistMemoryWrite,
   queryPersistedMemory,
 } from './memory-store.js';
+import {
+  loadCachedYouTubeTranscript,
+  saveCachedYouTubeTranscript,
+} from './youtube-transcript-cache.js';
+import { extractYouTubeVideoId, type YouTubeTranscriptResult } from './youtube-transcript.js';
 
 type ApprovalRequestDb = Pick<Db, 'insert' | 'select' | 'update'>;
+
+function getPathValue(input: unknown, path: string): unknown {
+  if (!path.trim()) return undefined;
+  const segments = path.split('.').map((segment) => segment.trim()).filter(Boolean);
+  let current = input;
+  for (const segment of segments) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+function getStringPathValue(input: unknown, path: string): string | undefined {
+  const value = getPathValue(input, path);
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function renderRuntimeTemplate(template: string, input: unknown): string {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, rawPath: string) => {
+    const value = rawPath === 'input' ? input : getPathValue(input, rawPath);
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '';
+    }
+  });
+}
+
+function resolveTranscriptSource(params: {
+  nodeInput: unknown;
+  nodeData: Record<string, unknown>;
+  defaultPath: string;
+  fallbackPaths: string[];
+}): string | undefined {
+  const explicitVideo =
+    typeof params.nodeData.video === 'string'
+      ? renderRuntimeTemplate(params.nodeData.video, params.nodeInput).trim()
+      : '';
+  if (explicitVideo) return explicitVideo;
+
+  const configuredPath =
+    typeof params.nodeData.videoPath === 'string' && params.nodeData.videoPath.trim()
+      ? params.nodeData.videoPath.trim()
+      : params.defaultPath;
+  return (
+    getStringPathValue(params.nodeInput, configuredPath) ??
+    params.fallbackPaths
+      .map((path) => getStringPathValue(params.nodeInput, path))
+      .find((value): value is string => !!value)
+  );
+}
+
+function mergeObjectOutput(
+  input: unknown,
+  additions: Record<string, unknown>,
+): Record<string, unknown> {
+  return input && typeof input === 'object' && !Array.isArray(input)
+    ? { ...(input as Record<string, unknown>), ...additions }
+    : { input, ...additions };
+}
+
+function buildCachedTranscriptExecution(params: {
+  nodeInput: unknown;
+  outputMode: string;
+  includeSegments: boolean;
+  transcript: YouTubeTranscriptResult & { cacheHit?: boolean };
+  cacheLabel: string;
+}): {
+  output: unknown;
+  result: unknown;
+  logs: Array<{ level: 'debug' | 'info' | 'warn' | 'error'; message: string; data?: unknown }>;
+} {
+  const envelope = {
+    ...params.transcript,
+    ...(params.includeSegments ? {} : { segments: undefined }),
+    input: params.nodeInput,
+    cacheHit: true,
+  };
+  const output =
+    params.outputMode === 'transcript-only'
+      ? params.transcript.transcript
+      : params.outputMode === 'replace'
+        ? envelope
+        : mergeObjectOutput(params.nodeInput, {
+            transcriptapi: envelope,
+            youtube: {
+              transcript: envelope,
+            },
+            youtubeTranscript: envelope,
+          });
+
+  return {
+    output,
+    result: {
+      ...envelope,
+      output,
+    },
+    logs: [
+      {
+        level: 'info',
+        message: `Reused cached ${params.cacheLabel} transcript for "${params.transcript.videoId}"`,
+        data: {
+          videoId: params.transcript.videoId,
+          provider: params.transcript.provider,
+          segmentCount: params.transcript.segmentCount,
+          characterCount: params.transcript.characterCount,
+          outputMode: params.outputMode,
+          cacheHit: true,
+        },
+      },
+    ],
+  };
+}
+
+function readTranscriptExecutionResult(value: unknown): YouTubeTranscriptResult | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.videoId !== 'string' ||
+    typeof record.videoUrl !== 'string' ||
+    typeof record.transcript !== 'string'
+  ) {
+    return undefined;
+  }
+  const segments = Array.isArray(record.segments)
+    ? record.segments
+        .map((segment) =>
+          segment && typeof segment === 'object' && !Array.isArray(segment)
+            ? {
+                text: String((segment as Record<string, unknown>).text ?? '').trim(),
+                start: Number((segment as Record<string, unknown>).start ?? 0),
+                duration: Number((segment as Record<string, unknown>).duration ?? 0),
+              }
+            : undefined,
+        )
+        .filter((segment): segment is { text: string; start: number; duration: number } =>
+          Boolean(segment?.text),
+        )
+    : [];
+
+  return {
+    videoId: record.videoId,
+    videoUrl: record.videoUrl,
+    provider: typeof record.provider === 'string' ? record.provider : 'transcriptapi',
+    ...(typeof record.title === 'string' ? { title: record.title } : {}),
+    ...(typeof record.duration === 'string' ? { duration: record.duration } : {}),
+    ...(typeof record.language === 'string' ? { language: record.language } : {}),
+    transcript: record.transcript,
+    segments,
+    segmentCount:
+      typeof record.segmentCount === 'number' ? record.segmentCount : segments.length,
+    characterCount:
+      typeof record.characterCount === 'number' ? record.characterCount : record.transcript.length,
+  };
+}
 
 const RUN_ROW = {
   id: runs.id,
@@ -1410,6 +1575,122 @@ export async function executeRunToCompletion(db: Db, runId: string): Promise<Run
                 },
               ],
       };
+    },
+    executeYouTubeTranscriptNode: async (params) => {
+      const provider =
+        typeof params.node.data.provider === 'string'
+          ? params.node.data.provider.trim().toLowerCase()
+          : 'transcriptapi';
+      if (provider !== 'transcriptapi') {
+        return executeDefaultYouTubeTranscriptNode(params);
+      }
+
+      const rawProfileId = params.node.data.profileId;
+      const profileId = typeof rawProfileId === 'string' ? rawProfileId.trim() : undefined;
+      const settings = await loadTranscriptApiProfileSettings(
+        db,
+        row.run.workspaceId,
+        profileId || undefined,
+      );
+      const source = resolveTranscriptSource({
+        nodeInput: params.nodeInput,
+        nodeData: params.node.data,
+        defaultPath: 'videoId',
+        fallbackPaths: ['videoId', 'videoUrl', 'url', 'input.videoId', 'input.url'],
+      });
+      const videoId = source ? extractYouTubeVideoId(source) : undefined;
+      const includeSegments =
+        params.node.data.includeSegments === false || params.node.data.includeSegments === 'false'
+          ? false
+          : true;
+      const outputMode =
+        typeof params.node.data.outputMode === 'string' && params.node.data.outputMode.trim()
+          ? params.node.data.outputMode.trim()
+          : 'merge';
+
+      if (videoId) {
+        const cached = await loadCachedYouTubeTranscript(db, {
+          workspaceId: row.run.workspaceId,
+          videoId,
+        });
+        if (cached) {
+          return buildCachedTranscriptExecution({
+            nodeInput: params.nodeInput,
+            outputMode,
+            includeSegments,
+            transcript: cached,
+            cacheLabel: 'YouTube',
+          });
+        }
+      }
+
+      const execution = await executeDefaultYouTubeTranscriptNode({
+        ...params,
+        transcriptApiKey: settings.apiKey,
+        ...(settings.baseUrl ? { transcriptApiBaseUrl: settings.baseUrl } : {}),
+      });
+      const transcript = readTranscriptExecutionResult(execution.result);
+      if (transcript) {
+        await saveCachedYouTubeTranscript(db, {
+          workspaceId: row.run.workspaceId,
+          transcript,
+        });
+      }
+      return execution;
+    },
+    executeTranscriptApiNode: async (params) => {
+      const rawProfileId = params.node.data.profileId;
+      const profileId = typeof rawProfileId === 'string' ? rawProfileId.trim() : undefined;
+      const settings = await loadTranscriptApiProfileSettings(
+        db,
+        row.run.workspaceId,
+        profileId || undefined,
+      );
+      const source = resolveTranscriptSource({
+        nodeInput: params.nodeInput,
+        nodeData: params.node.data,
+        defaultPath: 'url',
+        fallbackPaths: ['url', 'videoUrl', 'videoId', 'input.url', 'input.videoUrl', 'input.videoId'],
+      });
+      const videoId = source ? extractYouTubeVideoId(source) : undefined;
+      const includeSegments =
+        params.node.data.includeSegments === false || params.node.data.includeSegments === 'false'
+          ? false
+          : true;
+      const outputMode =
+        typeof params.node.data.outputMode === 'string' && params.node.data.outputMode.trim()
+          ? params.node.data.outputMode.trim()
+          : 'merge';
+
+      if (videoId) {
+        const cached = await loadCachedYouTubeTranscript(db, {
+          workspaceId: row.run.workspaceId,
+          videoId,
+        });
+        if (cached) {
+          return buildCachedTranscriptExecution({
+            nodeInput: params.nodeInput,
+            outputMode,
+            includeSegments,
+            transcript: cached,
+            cacheLabel: 'TranscriptAPI',
+          });
+        }
+      }
+
+      const execution = await executeDefaultTranscriptApiNode({
+        ...params,
+        transcriptApiKey: settings.apiKey,
+        ...(settings.baseUrl ? { transcriptApiBaseUrl: settings.baseUrl } : {}),
+      });
+      const transcript = readTranscriptExecutionResult(execution.result);
+      if (transcript) {
+        await saveCachedYouTubeTranscript(db, {
+          workspaceId: row.run.workspaceId,
+          transcript,
+        });
+      }
+      return execution;
     },
     execPolicy: row.execPolicy,
     checkCancellation: async () => runAbort.controller.signal.aborted,

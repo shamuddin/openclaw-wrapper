@@ -26,6 +26,10 @@ import type {
   RunStatus,
   RunTrigger,
   WorkspaceExecPolicy,
+  YouTubeArticleStatus,
+  YouTubeSubscriptionStatus,
+  YouTubeTranscriptStatus,
+  YouTubeVideoIngestionStatus,
 } from '@openclaw-wrapper/schemas';
 import type { DelegatedRunStatus } from '@openclaw-wrapper/schemas/run';
 import { relations, sql } from 'drizzle-orm';
@@ -500,6 +504,130 @@ export const runDelegations = pgTable(
 
 export type RunDelegationRow = typeof runDelegations.$inferSelect;
 export type NewRunDelegationRow = typeof runDelegations.$inferInsert;
+
+export const youtubeSubscriptions = pgTable(
+  'youtube_subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    channelProfileId: uuid('channel_profile_id').references(() => channelProfiles.id, {
+      onDelete: 'set null',
+    }),
+    channelId: text('channel_id').notNull(),
+    channelHandle: text('channel_handle'),
+    channelTitle: text('channel_title'),
+    flowId: uuid('flow_id').references(() => flows.id, { onDelete: 'set null' }),
+    topicUrl: text('topic_url').notNull(),
+    callbackUrl: text('callback_url').notNull(),
+    status: text('status').$type<YouTubeSubscriptionStatus>().notNull().default('draft'),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    lastNotificationAt: timestamp('last_notification_at', { withTimezone: true }),
+    lastRenewedAt: timestamp('last_renewed_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('youtube_subscriptions_workspace_channel_idx').on(
+      table.workspaceId,
+      table.channelId,
+    ),
+    index('youtube_subscriptions_workspace_updated_at_idx').on(table.workspaceId, table.updatedAt),
+    index('youtube_subscriptions_status_lease_idx').on(table.status, table.leaseExpiresAt),
+    index('youtube_subscriptions_flow_idx').on(table.flowId),
+  ],
+);
+
+export type YouTubeSubscriptionRow = typeof youtubeSubscriptions.$inferSelect;
+export type NewYouTubeSubscriptionRow = typeof youtubeSubscriptions.$inferInsert;
+
+export const youtubeVideoIngestions = pgTable(
+  'youtube_video_ingestions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    subscriptionId: uuid('subscription_id').references(() => youtubeSubscriptions.id, {
+      onDelete: 'set null',
+    }),
+    channelId: text('channel_id').notNull(),
+    channelTitle: text('channel_title'),
+    videoId: text('video_id').notNull(),
+    videoUrl: text('video_url').notNull(),
+    title: text('title'),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    status: text('status').$type<YouTubeVideoIngestionStatus>().notNull().default('detected'),
+    transcriptStatus: text('transcript_status')
+      .$type<YouTubeTranscriptStatus>()
+      .notNull()
+      .default('pending'),
+    articleStatus: text('article_status')
+      .$type<YouTubeArticleStatus>()
+      .notNull()
+      .default('pending'),
+    runId: uuid('run_id').references(() => runs.id, { onDelete: 'set null' }),
+    error: text('error'),
+    detectedAt: timestamp('detected_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('youtube_video_ingestions_workspace_video_idx').on(
+      table.workspaceId,
+      table.videoId,
+    ),
+    index('youtube_video_ingestions_workspace_detected_at_idx').on(
+      table.workspaceId,
+      table.detectedAt,
+    ),
+    index('youtube_video_ingestions_status_updated_at_idx').on(table.status, table.updatedAt),
+    index('youtube_video_ingestions_run_idx').on(table.runId),
+  ],
+);
+
+export type YouTubeVideoIngestionRow = typeof youtubeVideoIngestions.$inferSelect;
+export type NewYouTubeVideoIngestionRow = typeof youtubeVideoIngestions.$inferInsert;
+
+export const youtubeTranscriptCache = pgTable(
+  'youtube_transcript_cache',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    videoId: text('video_id').notNull(),
+    videoUrl: text('video_url').notNull(),
+    provider: text('provider').notNull().default('transcriptapi'),
+    title: text('title'),
+    duration: text('duration'),
+    language: text('language'),
+    transcript: text('transcript').notNull(),
+    segments: jsonb('segments').$type<Array<{ text: string; start: number; duration: number }>>(),
+    segmentCount: integer('segment_count').notNull().default(0),
+    characterCount: integer('character_count').notNull().default(0),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('youtube_transcript_cache_workspace_video_idx').on(
+      table.workspaceId,
+      table.videoId,
+    ),
+    index('youtube_transcript_cache_workspace_last_used_idx').on(
+      table.workspaceId,
+      table.lastUsedAt,
+    ),
+  ],
+);
+
+export type YouTubeTranscriptCacheRow = typeof youtubeTranscriptCache.$inferSelect;
+export type NewYouTubeTranscriptCacheRow = typeof youtubeTranscriptCache.$inferInsert;
 
 export const runApprovalRequests = pgTable(
   'run_approval_requests',

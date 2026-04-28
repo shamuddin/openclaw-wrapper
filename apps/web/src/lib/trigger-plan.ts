@@ -35,6 +35,24 @@ function readNodeString(node: GraphNode | undefined, key: string): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function parseDesignedPayload(value: string, nowIso: string): {
+  payload?: Record<string, unknown>;
+  error?: string;
+} {
+  if (!value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value.replaceAll('{{now}}', nowIso));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { error: 'Designed payload must be a JSON object.' };
+    }
+    return { payload: parsed as Record<string, unknown> };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : 'Designed payload is not valid JSON.',
+    };
+  }
+}
+
 function getPrimaryTriggerNode(nodes: GraphNode[]): GraphNode | undefined {
   return nodes.find((node) =>
     [
@@ -54,23 +72,37 @@ export function buildTriggerPlan(nodes: GraphNode[], flowName: string): TriggerP
 
   if (!triggerNode || triggerNode.type === 'trigger.webhook') {
     const eventName = readNodeString(triggerNode, 'eventName') || undefined;
+    const payloadMode = readNodeString(triggerNode, 'payloadMode') || 'any';
+    const designedPayload = parseDesignedPayload(
+      readNodeString(triggerNode, 'payloadTemplate'),
+      nowIso,
+    );
+    const defaultPayload = {
+      customerId: 'cust_demo_001',
+      orderId: '42',
+      message: 'Customer says order 42 needs a refund',
+      priority: 'normal',
+      createdAt: nowIso,
+    };
     return {
       kind: 'webhook',
       eventName,
       title: 'Webhook sample',
-      description: 'Runs the published webhook flow with a sample JSON body.',
+      description:
+        payloadMode === 'designed'
+          ? 'Runs the published webhook flow with the designed JSON body.'
+          : 'Runs the published webhook flow with a sample JSON body.',
       meta: [
         eventName ? `Event: ${eventName}` : 'Event: any webhook payload',
+        payloadMode === 'designed' ? 'Payload: designed JSON' : 'Payload: any JSON',
+        ...(designedPayload.error ? [`Payload issue: ${designedPayload.error}`] : []),
         'Trigger path: webhook',
       ],
       runLabel: 'Run webhook sample',
-      payload: {
-        customerId: 'cust_demo_001',
-        orderId: '42',
-        message: 'Customer says order 42 needs a refund',
-        priority: 'normal',
-        createdAt: nowIso,
-      },
+      payload:
+        payloadMode === 'designed' && designedPayload.payload
+          ? designedPayload.payload
+          : defaultPayload,
     };
   }
 
