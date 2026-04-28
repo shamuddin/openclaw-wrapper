@@ -22,6 +22,13 @@ export interface CanvasNodeData extends Record<string, unknown> {
 }
 
 export type CanvasNode = Node<CanvasNodeData, 'openclaw'>;
+export type CanvasNodeRunStatus =
+  | 'queued'
+  | 'running'
+  | 'waiting'
+  | 'succeeded'
+  | 'failed'
+  | 'rejected';
 
 export interface LoadedFlow {
   id: string;
@@ -51,6 +58,7 @@ interface CanvasState {
   flowVersion: number;
   publishedVersion: number | null;
   dirty: boolean;
+  runNodeStatuses: Record<string, CanvasNodeRunStatus>;
   clipboard: ClipboardSnapshot | null;
   pasteCount: number;
   // Undo/redo
@@ -68,6 +76,7 @@ interface CanvasState {
   selectNode: (nodeId: string | null) => void;
   selectEdge: (edgeId: string | null) => void;
   setNodeCatalog: (catalog: NodeCatalog) => void;
+  setRunNodeStatuses: (statuses: Record<string, CanvasNodeRunStatus>) => void;
   addNode: (nodeType: string, position: { x: number; y: number }) => void;
   applyRecipe: (recipeId: string) => boolean;
   setFlowName: (name: string) => void;
@@ -289,6 +298,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   flowVersion: 0,
   publishedVersion: null,
   dirty: false,
+  runNodeStatuses: {},
   clipboard: null,
   pasteCount: 0,
   past: [],
@@ -410,6 +420,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         }),
       ),
     })),
+
+  setRunNodeStatuses: (statuses) => set({ runNodeStatuses: statuses }),
 
   addNode: (nodeType, position) => {
     const catalog = get().nodeCatalog;
@@ -546,6 +558,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       flowVersion: flow.version,
       publishedVersion: flow.publishedVersion ?? null,
       dirty: false,
+      runNodeStatuses: {},
       clipboard: null,
       pasteCount: 0,
       past: [],
@@ -560,6 +573,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       flowVersion: version,
       publishedVersion: publishedVersion ?? null,
       dirty: false,
+      runNodeStatuses: {},
     }),
 
   markPublished: (version) => set({ publishedVersion: version }),

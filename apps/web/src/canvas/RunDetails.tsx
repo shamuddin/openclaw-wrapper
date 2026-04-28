@@ -5,15 +5,14 @@ import { notify } from '@/components/ui/toast-store';
 import type { Run } from '@openclaw-wrapper/schemas';
 import type { RunLineage } from '@openclaw-wrapper/schemas/run';
 import {
-  CheckCircle2,
-  Circle,
   Clipboard,
+  ChevronDown,
   Download,
-  Loader2,
   ShieldCheck,
   ShieldX,
   XCircle,
 } from 'lucide-react';
+import { useState } from 'react';
 
 interface TimelineEventRecord {
   id: string;
@@ -24,6 +23,14 @@ interface TimelineEventRecord {
   event: { type: string; [key: string]: unknown };
 }
 
+interface RunDetailsNode {
+  id: string;
+  data: {
+    label?: unknown;
+    nodeType?: unknown;
+  };
+}
+
 function prettyJson(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? 'null';
 }
@@ -31,6 +38,43 @@ function prettyJson(value: unknown): string {
 function readString(event: TimelineEventRecord['event'], key: string): string | undefined {
   const value = event[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+function readRecordObject(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(text);
+    return readRecordObject(parsed);
+  } catch {
+    return undefined;
+  }
+}
+
+function getNodeEventResult(record: TimelineEventRecord): unknown {
+  return record.event.result;
+}
+
+function getAgentReplyObject(result: unknown): Record<string, unknown> | undefined {
+  const resultObject = readRecordObject(result);
+  const replyText = typeof resultObject?.replyText === 'string' ? resultObject.replyText : '';
+  return replyText.trim() ? parseJsonObject(replyText.trim()) : undefined;
+}
+
+function getNodeEventDisplayOutput(record: TimelineEventRecord): unknown {
+  const result = getNodeEventResult(record);
+  const agentReply = getAgentReplyObject(result);
+  if (agentReply) return agentReply;
+
+  const resultObject = readRecordObject(result);
+  if (resultObject && 'output' in resultObject) {
+    return resultObject.output;
+  }
+  return result;
 }
 
 function readDelegationEvent(record: TimelineEventRecord):
@@ -142,44 +186,95 @@ function eventSummary(record: TimelineEventRecord): string {
   return record.event.type;
 }
 
-function eventIcon(record: TimelineEventRecord) {
-  if (readDelegationEvent(record)) {
-    return <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-sky-500" strokeWidth={2} />;
-  }
-  if (readRemoteCancelRelayData(record)) {
-    return <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-sky-500" strokeWidth={2} />;
-  }
+function eventStatus(record: TimelineEventRecord): {
+  label: string;
+  classes: string;
+  helper: string;
+} {
   const type = record.event.type;
-  if (type === 'node.failed' || type === 'run.finished') {
-    return <XCircle className="mt-0.5 h-3 w-3 shrink-0 text-red-400" strokeWidth={2} />;
+  if (type === 'node.failed') {
+    return {
+      label: 'failed',
+      classes: 'border-red-200 bg-red-50 text-red-700',
+      helper: 'A node stopped with an error.',
+    };
   }
-  if (type === 'node.finished' || type === 'run.started') {
-    return <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-emerald-400" strokeWidth={2} />;
+  if (type === 'run.finished') {
+    const status = readString(record.event, 'status') ?? 'finished';
+    return {
+      label: status,
+      classes:
+        status === 'succeeded'
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+          : status === 'failed'
+            ? 'border-red-200 bg-red-50 text-red-700'
+            : 'border-gray-200 bg-gray-50 text-gray-700',
+      helper: status === 'succeeded' ? 'The whole run completed.' : 'The run has ended.',
+    };
   }
   if (type === 'run.approval.requested' || type === 'run.waiting') {
-    return (
-      <Loader2 className="mt-0.5 h-3 w-3 shrink-0 animate-spin text-violet-400" strokeWidth={2} />
-    );
+    return {
+      label: 'waiting',
+      classes: 'border-violet-200 bg-violet-50 text-violet-700',
+      helper: 'The run paused and is waiting before continuing.',
+    };
   }
-  return <Circle className="mt-0.5 h-3 w-3 shrink-0 text-gray-300" strokeWidth={2} />;
+  if (type === 'run.approval.recorded') {
+    const rejected = readString(record.event, 'decision') === 'rejected';
+    return {
+      label: rejected ? 'rejected' : 'approved',
+      classes: rejected
+        ? 'border-amber-200 bg-amber-50 text-amber-800'
+        : 'border-emerald-200 bg-emerald-50 text-emerald-700',
+      helper: rejected
+        ? 'The approval was rejected by a user.'
+        : 'The approval was accepted by a user.',
+    };
+  }
+  if (type === 'node.started' || type === 'run.started' || type === 'run.resumed') {
+    return {
+      label: 'running',
+      classes: 'border-blue-200 bg-blue-50 text-blue-700',
+      helper: 'Work started or resumed.',
+    };
+  }
+  if (type === 'node.finished' || readDelegationEvent(record)) {
+    return {
+      label: 'done',
+      classes: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+      helper: 'This step completed.',
+    };
+  }
+  return {
+    label: 'recorded',
+    classes: 'border-gray-200 bg-gray-50 text-gray-700',
+    helper: 'Informational event.',
+  };
 }
 
-function EventPayload({ record }: { record: TimelineEventRecord }) {
-  if (record.event.type === 'run.log' && record.event.data !== undefined) {
-    return (
-      <pre className="mt-1.5 max-h-40 overflow-auto rounded-lg bg-gray-50 p-2 text-[10px] text-gray-600">
-        {prettyJson(record.event.data)}
-      </pre>
-    );
-  }
+function eventFriendlyDetails(record: TimelineEventRecord): string[] {
+  const rows: string[] = [];
+  const nodeId = readString(record.event, 'nodeId');
+  if (nodeId) rows.push(`Node: ${nodeId}`);
+  const reason = readString(record.event, 'reason');
+  if (reason) rows.push(`Reason: ${reason}`);
+  const decision = readString(record.event, 'decision');
+  if (decision) rows.push(`Decision: ${decision}`);
+  const error = readString(record.event, 'error');
+  if (error) rows.push(`Error: ${error}`);
   if (record.event.type === 'node.finished' && 'result' in record.event) {
-    return (
-      <pre className="mt-1.5 max-h-40 overflow-auto rounded-lg bg-gray-50 p-2 text-[10px] text-gray-600">
-        {prettyJson(record.event.result)}
-      </pre>
-    );
+    const result = record.event.result as { output?: unknown } | undefined;
+    if (result?.output && typeof result.output === 'object') {
+      const output = result.output as Record<string, unknown>;
+      if (typeof output.videoId === 'string') rows.push(`Video: ${output.videoId}`);
+      if (typeof output.characterCount === 'number') {
+        rows.push(`Transcript: ${output.characterCount} characters`);
+      }
+      if (typeof output.segmentCount === 'number') rows.push(`Segments: ${output.segmentCount}`);
+      if (typeof output.agentId === 'string') rows.push(`Agent: ${output.agentId}`);
+    }
   }
-  return null;
+  return rows;
 }
 
 export function statusClasses(status: Run['status']) {
@@ -229,10 +324,97 @@ function delegatedStatusClasses(status: RunLineage['delegatedChildren'][number][
   }
 }
 
+function NodeOutputCard({
+  record,
+  label,
+  nodeType,
+  selected,
+  onCopy,
+}: {
+  record: TimelineEventRecord;
+  label: string;
+  nodeType?: string;
+  selected?: boolean;
+  onCopy: (value: unknown) => void;
+}) {
+  const output = getNodeEventDisplayOutput(record);
+  const resultObject = readRecordObject(getNodeEventResult(record));
+  const replyText = typeof resultObject?.replyText === 'string' ? resultObject.replyText : '';
+  const outputObject = readRecordObject(output);
+  const title = typeof outputObject?.title === 'string' ? outputObject.title : undefined;
+  const summary = typeof outputObject?.summary === 'string' ? outputObject.summary : undefined;
+  const bodyMarkdown =
+    typeof outputObject?.bodyMarkdown === 'string' ? outputObject.bodyMarkdown : undefined;
+
+  return (
+    <div
+      className={`rounded-xl border p-3 ${
+        selected
+          ? 'border-blue-200 bg-blue-50/60'
+          : 'border-[var(--color-border)] bg-[var(--color-surface)]'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs font-semibold text-[var(--color-fg)]">{label}</div>
+          <div className="mt-0.5 text-[10px] text-gray-400">
+            {nodeType ?? 'node'} - finished at {new Date(record.createdAt).toLocaleTimeString()}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-gray-400 transition hover:bg-[var(--color-surface-2)] hover:text-gray-600"
+          onClick={() => onCopy(output)}
+          aria-label={`Copy ${label} output`}
+        >
+          <Clipboard className="h-3 w-3" strokeWidth={2} />
+          Copy
+        </button>
+      </div>
+
+      {title ? (
+        <div className="mt-3 rounded-lg bg-white/80 p-2">
+          <div className="text-[11px] font-medium text-gray-500">Article title</div>
+          <div className="mt-1 text-sm font-semibold text-[var(--color-fg)]">{title}</div>
+          {summary ? <p className="mt-1 text-xs leading-5 text-gray-600">{summary}</p> : null}
+        </div>
+      ) : null}
+
+      {bodyMarkdown ? (
+        <details className="mt-2 rounded-lg bg-white/80 p-2">
+          <summary className="cursor-pointer text-[11px] font-medium text-gray-500">
+            Article markdown
+          </summary>
+          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap text-[11px] leading-5 text-gray-700">
+            {bodyMarkdown}
+          </pre>
+        </details>
+      ) : null}
+
+      {!title && replyText ? (
+        <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-2 text-[11px] text-gray-700">
+          {replyText}
+        </pre>
+      ) : null}
+
+      <details className="mt-2">
+        <summary className="cursor-pointer text-[11px] font-medium text-gray-500">
+          Full node output JSON
+        </summary>
+        <pre className="mt-2 max-h-72 overflow-auto rounded-md bg-gray-50 p-2 text-[10px] text-gray-600">
+          {prettyJson(output)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
 export function RunDetails({
   run,
   events,
   lineage,
+  nodes = [],
+  selectedNodeId,
   onApprove,
   onReject,
   onCancel,
@@ -242,6 +424,8 @@ export function RunDetails({
   run: Run;
   events: TimelineEventRecord[] | undefined;
   lineage?: RunLineage;
+  nodes?: RunDetailsNode[];
+  selectedNodeId?: string | null;
   onApprove?: () => void;
   onReject?: () => void;
   onCancel?: () => void;
@@ -273,12 +457,43 @@ export function RunDetails({
     }
   }
 
+  async function copyNodeOutput(value: unknown) {
+    try {
+      await navigator.clipboard.writeText(prettyJson(value));
+      notify({ tone: 'success', title: 'Copied', message: 'Node output in clipboard.' });
+    } catch {
+      notify({ tone: 'error', title: 'Copy failed', message: 'Clipboard unavailable.' });
+    }
+  }
+
   const canCancel =
     run.status === 'pending' || run.status === 'running' || run.status === 'waiting';
   const delegatedChildren = lineage?.delegatedChildren ?? [];
   const delegations = (events ?? [])
     .map((record) => readDelegationEvent(record))
     .filter((entry): entry is NonNullable<typeof entry> => !!entry);
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const nodeMetaById = new Map(
+    nodes.map((node) => [
+      node.id,
+      {
+        label:
+          typeof node.data.label === 'string' && node.data.label.trim()
+            ? node.data.label.trim()
+            : node.id,
+        nodeType: typeof node.data.nodeType === 'string' ? node.data.nodeType : undefined,
+      },
+    ]),
+  );
+  const finishedNodeEvents = (events ?? [])
+    .filter((record) => record.event.type === 'node.finished' && readString(record.event, 'nodeId'))
+    .sort((left, right) => left.sequence - right.sequence);
+  const selectedNodeFinishedEvents = selectedNodeId
+    ? finishedNodeEvents.filter((record) => readString(record.event, 'nodeId') === selectedNodeId)
+    : [];
+  const otherFinishedNodeEvents = selectedNodeId
+    ? finishedNodeEvents.filter((record) => readString(record.event, 'nodeId') !== selectedNodeId)
+    : finishedNodeEvents;
 
   return (
     <div className="space-y-3">
@@ -493,6 +708,33 @@ export function RunDetails({
         )}
       </div>
 
+      {finishedNodeEvents.length > 0 ? (
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+          <div className="mb-2">
+            <p className="text-xs font-medium text-gray-600">Node outputs</p>
+            <p className="mt-0.5 text-[11px] text-gray-400">
+              Select a canvas node to pin its latest output here.
+            </p>
+          </div>
+          <div className="space-y-2">
+            {[...selectedNodeFinishedEvents, ...otherFinishedNodeEvents].map((record) => {
+              const nodeId = readString(record.event, 'nodeId') ?? '';
+              const meta = nodeMetaById.get(nodeId);
+              return (
+                <NodeOutputCard
+                  key={record.id}
+                  record={record}
+                  label={meta?.label ?? nodeId}
+                  nodeType={meta?.nodeType}
+                  selected={Boolean(selectedNodeId && selectedNodeId === nodeId)}
+                  onCopy={copyNodeOutput}
+                />
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
       {/* Event timeline */}
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
@@ -506,7 +748,13 @@ export function RunDetails({
             events.map((record) => (
               <div key={record.id} className="px-3 py-2">
                 <div className="flex items-start gap-2">
-                  {eventIcon(record)}
+                  <span
+                    className={`mt-0.5 shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-medium ${
+                      eventStatus(record).classes
+                    }`}
+                  >
+                    {eventStatus(record).label}
+                  </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <div className="truncate text-[12px] text-[var(--color-fg)]">
@@ -519,7 +767,44 @@ export function RunDetails({
                     <div className="text-[10px] text-gray-400">
                       {record.event.type} · #{record.sequence}
                     </div>
-                    <EventPayload record={record} />
+                    <button
+                      type="button"
+                      className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-[var(--color-fg)]"
+                      onClick={() =>
+                        setExpandedEventId(expandedEventId === record.id ? null : record.id)
+                      }
+                    >
+                      Details
+                      <ChevronDown
+                        className={`h-3.5 w-3.5 transition ${
+                          expandedEventId === record.id ? 'rotate-180' : ''
+                        }`}
+                        strokeWidth={2}
+                      />
+                    </button>
+                    {expandedEventId === record.id ? (
+                      <div className="mt-2 rounded-lg border border-[var(--color-border)] bg-gray-50 p-2.5">
+                        {eventFriendlyDetails(record).length > 0 ? (
+                          <div className="space-y-1 text-[11px] text-gray-600">
+                            {eventFriendlyDetails(record).map((line) => (
+                              <div key={line}>{line}</div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-gray-500">
+                            No extra summary for this event.
+                          </div>
+                        )}
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-[11px] font-medium text-gray-500">
+                            Technical JSON
+                          </summary>
+                          <pre className="mt-2 max-h-72 overflow-auto rounded-md bg-white p-2 text-[10px] text-gray-600">
+                            {prettyJson(record.event)}
+                          </pre>
+                        </details>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>

@@ -22,7 +22,7 @@ export function AppHeader({
   title,
   subtitle,
 }: {
-  current: 'workspace' | 'builder' | 'channels' | 'cron' | 'automation' | 'ops';
+  current: 'workspace' | 'builder' | 'channels' | 'cron' | 'automation' | 'ops' | 'youtube';
   title: string;
   subtitle: string;
 }) {

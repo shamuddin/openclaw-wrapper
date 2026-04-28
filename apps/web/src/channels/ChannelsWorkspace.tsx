@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Cable,
   CheckCircle2,
+  Plus,
   Play,
   QrCode,
   RefreshCcw,
@@ -25,6 +26,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { Eye, EyeOff } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 const EMPTY_PROFILE_ID = '00000000-0000-0000-0000-000000000000';
@@ -56,7 +58,7 @@ function trim(value: string): string {
 
 function createDraft(template: ChannelProfileTemplate): EditableChannelProfile {
   return {
-    name: '',
+    name: template.id === 'transcript-api' ? 'TranscriptAPI.com' : '',
     templateId: template.id,
     channelType: template.channelType === 'custom' ? '' : template.channelType,
     agentId: '',
@@ -113,6 +115,50 @@ function statusTone(runtime: ChannelRuntimeStatus | undefined): {
   return {
     label: 'Detected',
     className: 'border-slate-200 bg-slate-50 text-slate-600',
+  };
+}
+
+function profileStatusTone(
+  templateId: string | undefined,
+  runtime: ChannelRuntimeStatus | undefined,
+): {
+  label: string;
+  className: string;
+} {
+  if (templateId === 'youtube-data-api' && !runtime) {
+    return {
+      label: 'Read-only',
+      className: 'border-sky-200 bg-sky-50 text-sky-700',
+    };
+  }
+  if (templateId === 'transcript-api' && !runtime) {
+    return {
+      label: 'API key',
+      className: 'border-sky-200 bg-sky-50 text-sky-700',
+    };
+  }
+  return statusTone(runtime);
+}
+
+function profileConnectionCopy(templateId: string | undefined): {
+  title: string;
+  body: string;
+} {
+  if (templateId === 'youtube-data-api') {
+    return {
+      title: 'No runtime required',
+      body: 'YouTube Data API profiles use a saved API key from the wrapper and do not need a live OpenClaw channel runtime.',
+    };
+  }
+  if (templateId === 'transcript-api') {
+    return {
+      title: 'No runtime required',
+      body: 'TranscriptAPI.com profiles use an encrypted API key stored in the wrapper. Flow nodes read it server-side.',
+    };
+  }
+  return {
+    title: 'No runtime match',
+    body: 'The gateway did not report a live channel matching this profile yet.',
   };
 }
 
@@ -188,7 +234,20 @@ function readSecretPreview(
   return secretState.find((entry) => entry.key === key) ?? { configured: false };
 }
 
+function parseChannelRefs(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  return value
+    .split(/[\n,]+/u)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function serializeChannelRefs(refs: string[]): string {
+  return refs.map((entry) => entry.trim()).filter(Boolean).join('\n');
+}
+
 export function ChannelsWorkspace() {
+  const searchParams = useSearchParams();
   const utils = trpc.useUtils();
   const workspaceQuery = trpc.workspaces.current.useQuery();
   const catalogQuery = trpc.channels.catalog.useQuery(undefined, { refetchInterval: 10_000 });
@@ -235,9 +294,17 @@ export function ChannelsWorkspace() {
   const selectedTemplate = draft ? templatesById.get(draft.templateId) : undefined;
   const workspaceRole = workspaceQuery.data?.current.role ?? 'member';
   const canManageChannels = workspaceRole === 'owner' || workspaceRole === 'admin';
+  const requestedTemplateId = searchParams.get('template');
 
   useEffect(() => {
     if (!templates.length) return;
+    if (requestedTemplateId && !selectedId && !draft) {
+      const requestedTemplate = templatesById.get(requestedTemplateId);
+      if (requestedTemplate) {
+        setDraft(createDraft(requestedTemplate));
+        return;
+      }
+    }
     if (selectedId) return;
     if (draft) return;
     if (listQuery.data && listQuery.data.length > 0) {
@@ -251,7 +318,7 @@ export function ChannelsWorkspace() {
     if (firstTemplate) {
       setDraft(createDraft(firstTemplate));
     }
-  }, [draft, listQuery.data, selectedId, templates]);
+  }, [draft, listQuery.data, requestedTemplateId, selectedId, templates, templatesById]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -452,6 +519,23 @@ export function ChannelsWorkspace() {
       notify({
         tone: 'error',
         title: 'YouTube API test failed',
+        message: error.message,
+        durationMs: 6_000,
+      });
+    },
+  });
+  const testTranscriptApiMutation = trpc.channels.testTranscriptApi.useMutation({
+    onSuccess(result) {
+      notify({
+        tone: 'success',
+        title: 'TranscriptAPI ready',
+        message: `${result.profileName} successfully fetched a sample transcript.`,
+      });
+    },
+    onError(error) {
+      notify({
+        tone: 'error',
+        title: 'TranscriptAPI test failed',
         message: error.message,
         durationMs: 6_000,
       });
@@ -701,7 +785,7 @@ export function ChannelsWorkspace() {
                   p.channelType.toLowerCase().includes(sidebarSearch.trim().toLowerCase()),
               )
               .map((profile) => {
-                const tone = statusTone(profile.runtime);
+                const tone = profileStatusTone(profile.templateId, profile.runtime);
                 const selected = profile.id === selectedId;
                 return (
                   <button
@@ -771,9 +855,11 @@ export function ChannelsWorkspace() {
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <span
-                        className={`rounded-md border px-2 py-1 text-[11px] font-medium ${statusTone(selectedRuntime).className}`}
+                        className={`rounded-md border px-2 py-1 text-[11px] font-medium ${
+                          profileStatusTone(selectedTemplate.id, selectedRuntime).className
+                        }`}
                       >
-                        {statusTone(selectedRuntime).label}
+                        {profileStatusTone(selectedTemplate.id, selectedRuntime).label}
                       </span>
                     </div>
                   </div>
@@ -927,6 +1013,69 @@ export function ChannelsWorkspace() {
                       {selectedTemplate.fields.map((field) => {
                         const secret = readSecretPreview(draft.secretState, field.key);
 
+                        if (
+                          selectedTemplate.id === 'youtube-data-api' &&
+                          field.key === 'channelIds'
+                        ) {
+                          const refs = parseChannelRefs(draft.config[field.key]);
+                          const visibleRefs = refs.length > 0 ? refs : [''];
+                          const updateRef = (index: number, value: string) => {
+                            const next = [...visibleRefs];
+                            next[index] = value;
+                            setConfigValue(field.key, serializeChannelRefs(next));
+                          };
+                          const removeRef = (index: number) => {
+                            const next = visibleRefs.filter((_, entryIndex) => entryIndex !== index);
+                            setConfigValue(field.key, serializeChannelRefs(next));
+                          };
+                          const addRef = () => {
+                            setConfigValue(field.key, serializeChannelRefs([...visibleRefs, '']));
+                          };
+
+                          return (
+                            <div key={field.key} className="lg:col-span-2">
+                              <div className="mb-1.5 flex items-center justify-between gap-3">
+                                <span className="block text-xs font-medium text-gray-500">
+                                  {field.label}
+                                </span>
+                                <Button size="sm" variant="outline" onClick={addRef}>
+                                  <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+                                  Add
+                                </Button>
+                              </div>
+                              <div className="space-y-2">
+                                {visibleRefs.map((ref, index) => (
+                                  <div
+                                    key={`${field.key}-${index}`}
+                                    className="grid gap-2 sm:grid-cols-[1fr_auto]"
+                                  >
+                                    <input
+                                      value={ref}
+                                      onChange={(event) => updateRef(index, event.target.value)}
+                                      className="h-10 rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm text-[var(--color-fg)] outline-none transition placeholder:text-gray-400 focus:border-[var(--color-accent)]"
+                                      placeholder="@channelhandle or UC..."
+                                    />
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => removeRef(index)}
+                                      disabled={visibleRefs.length === 1 && !ref.trim()}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+                                      Remove
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                              {renderFieldDescription(field) && (
+                                <p className="mt-1 text-xs text-gray-400">
+                                  {renderFieldDescription(field)}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        }
+
                         if (field.type === 'textarea') {
                           return (
                             <label key={field.key} className="block lg:col-span-2">
@@ -1019,13 +1168,22 @@ export function ChannelsWorkspace() {
                               <div className="relative">
                                 <input
                                   type={isVisible ? 'text' : 'password'}
+                                  name={`${draft.id ?? 'new'}-${field.key}-secret`}
+                                  autoComplete="new-password"
+                                  autoCorrect="off"
+                                  autoCapitalize="none"
+                                  spellCheck={false}
+                                  data-1p-ignore="true"
+                                  data-lpignore="true"
                                   value={draft.secretInputs[field.key] ?? ''}
                                   onChange={(event) =>
                                     setSecretValue(field.key, event.target.value)
                                   }
                                   className="w-full rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 pr-10 text-sm text-[var(--color-fg)] outline-none transition focus:border-[var(--color-accent)]"
                                   placeholder={
-                                    field.placeholder ?? 'Leave blank to keep the saved value'
+                                    secret.configured
+                                      ? 'Saved encrypted. Enter a new key to replace it.'
+                                      : field.placeholder
                                   }
                                 />
                                 <button
@@ -1181,14 +1339,17 @@ export function ChannelsWorkspace() {
                             </div>
                           </>
                         ) : (
-                          <>
-                            <div className="font-medium text-[var(--color-fg)]">
-                              No runtime match
-                            </div>
-                            <div className="mt-1">
-                              The gateway did not report a live channel matching this profile yet.
-                            </div>
-                          </>
+                          (() => {
+                            const copy = profileConnectionCopy(selectedTemplate.id);
+                            return (
+                              <>
+                                <div className="font-medium text-[var(--color-fg)]">
+                                  {copy.title}
+                                </div>
+                                <div className="mt-1">{copy.body}</div>
+                              </>
+                            );
+                          })()
                         )}
                       </div>
 
@@ -1238,6 +1399,48 @@ export function ChannelsWorkspace() {
                             {testYouTubeMutation.isPending
                               ? 'Testing YouTube...'
                               : 'Test YouTube API'}
+                          </Button>
+                        </div>
+                      )}
+
+                      {selectedTemplate.id === 'transcript-api' && (
+                        <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-xs text-sky-800">
+                          <div>
+                            <div className="font-medium">TranscriptAPI node configuration</div>
+                            <div className="mt-1">
+                              Save your TranscriptAPI key here. The TranscriptAPI flow node will
+                              read this encrypted profile server-side, so the key never appears on
+                              the canvas or in run payloads.
+                            </div>
+                          </div>
+                          <div className="rounded-lg border border-sky-200 bg-white/70 px-3 py-2 text-sky-700">
+                            Use the API key from TranscriptAPI.com → API Keys. The node calls
+                            /api/v2/youtube/transcript with the Bearer header.
+                          </div>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              if (!draft.id) {
+                                notify({
+                                  tone: 'warning',
+                                  title: 'Save first',
+                                  message:
+                                    'Save the TranscriptAPI profile before testing the API key.',
+                                });
+                                return;
+                              }
+                              testTranscriptApiMutation.mutate({ id: draft.id });
+                            }}
+                            disabled={
+                              !draft.id ||
+                              testTranscriptApiMutation.isPending ||
+                              !canManageChannels
+                            }
+                          >
+                            <Play className="h-3.5 w-3.5" strokeWidth={2} />
+                            {testTranscriptApiMutation.isPending
+                              ? 'Testing TranscriptAPI...'
+                              : 'Test TranscriptAPI'}
                           </Button>
                         </div>
                       )}

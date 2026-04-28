@@ -19,7 +19,7 @@ import {
   startOpenClawChannelPairing,
   waitForOpenClawChannelPairing,
 } from './openclaw.js';
-import { describeStoredSecret, encryptStoredSecrets } from './secret-store.js';
+import { decryptSecretValue, describeStoredSecret, encryptStoredSecrets } from './secret-store.js';
 
 const DM_POLICY_OPTIONS: ChannelConfigOption[] = [
   { label: 'Pairing', value: 'pairing' },
@@ -274,6 +274,36 @@ export const CHANNEL_PROFILE_TEMPLATES: ChannelProfileTemplate[] = [
       },
     ],
   },
+  {
+    id: 'transcript-api',
+    label: 'TranscriptAPI.com',
+    channelType: 'transcriptapi',
+    description:
+      'Store a TranscriptAPI.com key so flow nodes can fetch YouTube transcripts without putting secrets in the canvas.',
+    icon: 'Captions',
+    pairingMode: 'none',
+    supportsTestSend: false,
+    defaults: {
+      baseUrl: 'https://transcriptapi.com/api/v2',
+    },
+    fields: [
+      {
+        key: 'apiKey',
+        label: 'TranscriptAPI key',
+        type: 'password',
+        required: true,
+        description:
+          'Stored encrypted. The TranscriptAPI node reads this key server-side at run time.',
+      },
+      {
+        key: 'baseUrl',
+        label: 'API base URL',
+        type: 'text',
+        placeholder: 'https://transcriptapi.com/api/v2',
+        description: 'Leave as default unless TranscriptAPI support gives you a custom endpoint.',
+      },
+    ],
+  },
 ];
 
 export interface SaveChannelProfileInput {
@@ -305,6 +335,13 @@ export interface ChannelExecutionProfile {
   routeKey?: string;
   defaultTarget?: string;
   config: Record<string, unknown>;
+}
+
+export interface TranscriptApiProfileSettings {
+  profileId: string;
+  profileName: string;
+  apiKey: string;
+  baseUrl?: string;
 }
 
 function trimOptionalString(value: unknown): string | undefined {
@@ -742,6 +779,98 @@ export async function getChannelExecutionProfile(
     routeKey: profile.routeKey ?? undefined,
     defaultTarget: profile.defaultTarget ?? undefined,
     config: profile.config ?? {},
+  };
+}
+
+export async function loadTranscriptApiProfileSettings(
+  db: Db,
+  workspaceId: string,
+  profileId?: string,
+): Promise<TranscriptApiProfileSettings> {
+  const profile = profileId
+    ? await db.query.channelProfiles.findFirst({
+        where: (profiles, { and, eq }) =>
+          and(
+            eq(profiles.id, profileId),
+            eq(profiles.workspaceId, workspaceId),
+            eq(profiles.templateId, 'transcript-api'),
+          ),
+      })
+    : (
+        await db
+          .select()
+          .from(channelProfiles)
+          .where(
+            and(
+              eq(channelProfiles.workspaceId, workspaceId),
+              eq(channelProfiles.templateId, 'transcript-api'),
+            ),
+          )
+          .orderBy(desc(channelProfiles.appliedAt), desc(channelProfiles.updatedAt))
+          .limit(1)
+      )[0];
+
+  if (!profile) {
+    throw new Error('Create and save a TranscriptAPI.com profile before using the TranscriptAPI node.');
+  }
+
+  const encryptedApiKey = trimOptionalString(profile.secrets?.apiKey);
+  if (!encryptedApiKey) {
+    throw new Error('TranscriptAPI key is missing from the selected profile.');
+  }
+
+  const baseUrl = trimOptionalString(profile.config?.baseUrl);
+  return {
+    profileId: profile.id,
+    profileName: profile.name,
+    apiKey: decryptSecretValue(encryptedApiKey),
+    ...(baseUrl ? { baseUrl } : {}),
+  };
+}
+
+export async function testTranscriptApiProfile(
+  db: Db,
+  profileId: string,
+  workspaceId: string,
+): Promise<{
+  ok: true;
+  profileId: string;
+  profileName: string;
+  checkedAt: string;
+}> {
+  const settings = await loadTranscriptApiProfileSettings(db, workspaceId, profileId);
+  const baseUrl = (settings.baseUrl ?? 'https://transcriptapi.com/api/v2').replace(/\/+$/u, '');
+  const url = new URL(`${baseUrl}/youtube/transcript`);
+  url.searchParams.set('video_url', 'dQw4w9WgXcQ');
+  url.searchParams.set('format', 'json');
+
+  const response = await fetch(url, {
+    headers: {
+      authorization: `Bearer ${settings.apiKey}`,
+      accept: 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const payload = (await response.json()) as {
+        detail?: string;
+        error?: string;
+        message?: string;
+      };
+      detail = payload.detail ?? payload.error ?? payload.message ?? detail;
+    } catch {
+      // Keep status text when TranscriptAPI does not return JSON.
+    }
+    throw new Error(`TranscriptAPI test failed (${response.status}): ${detail}`);
+  }
+
+  return {
+    ok: true,
+    profileId: settings.profileId,
+    profileName: settings.profileName,
+    checkedAt: new Date().toISOString(),
   };
 }
 

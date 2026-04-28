@@ -1,0 +1,3 @@
+ALTER TABLE "youtube_subscriptions" ADD COLUMN "flow_id" uuid;--> statement-breakpoint
+ALTER TABLE "youtube_subscriptions" ADD CONSTRAINT "youtube_subscriptions_flow_id_flows_id_fk" FOREIGN KEY ("flow_id") REFERENCES "public"."flows"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "youtube_subscriptions_flow_idx" ON "youtube_subscriptions" USING btree ("flow_id");

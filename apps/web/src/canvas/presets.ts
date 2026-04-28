@@ -24,6 +24,65 @@ export interface CanvasRecipeDefinition {
 
 export const CANVAS_RECIPES: CanvasRecipeDefinition[] = [
   {
+    id: 'youtube-url-article',
+    title: 'YouTube URL -> Article',
+    description:
+      'Accept a YouTube video URL, fetch the transcript, and hand the full source to an agent for article drafting.',
+    steps: ['Webhook', 'YouTube Transcript', 'Run Agent', 'Approval'],
+    nodes: [
+      {
+        id: 'trigger',
+        nodeType: 'trigger.webhook',
+        label: 'YouTube video URL',
+        position: { x: 0, y: 40 },
+        data: {
+          eventName: 'youtube.video.article',
+          notes: 'Send {"url":"https://www.youtube.com/watch?v=..."} or {"videoId":"..."}',
+        },
+      },
+      {
+        id: 'transcript',
+        nodeType: 'tool.transcriptapi',
+        label: 'Get transcript',
+        position: { x: 240, y: 40 },
+        data: {
+          video: '{{url}}',
+          videoPath: 'url',
+          includeSegments: false,
+          outputMode: 'merge',
+        },
+      },
+      {
+        id: 'agent',
+        nodeType: 'action.agent',
+        label: 'Draft article',
+        position: { x: 500, y: 40 },
+        data: {
+          instructions:
+            'Write a production-ready article from the YouTube transcript. Return a title, slug, summary, bodyMarkdown, tags, and sourceVideoUrl. Preserve the source meaning and do not invent claims beyond the transcript.',
+          inputTemplate:
+            'Source video URL: {{youtubeTranscript.videoUrl}}\nVideo ID: {{youtubeTranscript.videoId}}\n\nTranscript:\n{{youtubeTranscript.transcript}}',
+          waitTimeoutMs: '180000',
+        },
+      },
+      {
+        id: 'approval',
+        nodeType: 'control.approval',
+        label: 'Review draft',
+        position: { x: 760, y: 40 },
+        data: {
+          reason: 'Review the generated YouTube article draft before publishing.',
+          timeoutSeconds: '86400',
+        },
+      },
+    ],
+    edges: [
+      { source: 'trigger', sourcePort: 'out', target: 'transcript', targetPort: 'in' },
+      { source: 'transcript', sourcePort: 'out', target: 'agent', targetPort: 'in' },
+      { source: 'agent', sourcePort: 'out', target: 'approval', targetPort: 'in' },
+    ],
+  },
+  {
     id: 'search-browser-brief',
     title: 'Search -> Browser -> Brief',
     description: 'Find a strong result, open it, shape a compact payload, and hand it to an agent.',

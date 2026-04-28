@@ -37,7 +37,7 @@ import { NodeConfigPanel } from './NodeConfigPanel';
 import { RunDetails } from './RunDetails';
 import { RunList } from './RunList';
 import { edgesToGraph, nodesToGraph } from './serialize';
-import { useCanvasStore } from './store';
+import { type CanvasNodeRunStatus, useCanvasStore } from './store';
 import { getBuilderIssues } from './validation';
 
 type InspectorTab = 'configure' | 'runs';
@@ -90,6 +90,7 @@ export function RunInspector() {
     nodes,
     edges,
     selectedCanvasItem,
+    setRunNodeStatuses,
   } = useCanvasStore(
     useShallow((state) => ({
       flowId: state.flowId,
@@ -101,6 +102,7 @@ export function RunInspector() {
       edges: state.edges,
       selectedCanvasItem:
         state.nodes.find((n) => n.selected)?.id ?? state.edges.find((e) => e.selected)?.id ?? null,
+      setRunNodeStatuses: state.setRunNodeStatuses,
     })),
   );
 
@@ -192,6 +194,56 @@ export function RunInspector() {
         selectedRun?.status === 'running' || selectedRun?.status === 'waiting' ? 1500 : 4000,
     },
   );
+
+  useEffect(() => {
+    if (!selectedRun) {
+      setRunNodeStatuses({});
+      return;
+    }
+
+    const statuses: Record<string, CanvasNodeRunStatus> = {};
+    for (const record of eventsQuery.data ?? []) {
+      const event = record.event as { type: string; nodeId?: unknown; decision?: unknown };
+      const nodeId =
+        typeof event.nodeId === 'string' && event.nodeId.trim()
+          ? event.nodeId.trim()
+          : undefined;
+      if (!nodeId) continue;
+      switch (event.type) {
+        case 'node.started':
+          statuses[nodeId] = 'running';
+          break;
+        case 'node.finished':
+          statuses[nodeId] = 'succeeded';
+          break;
+        case 'node.failed':
+          statuses[nodeId] = 'failed';
+          break;
+        case 'run.approval.requested':
+        case 'run.waiting':
+          statuses[nodeId] = 'waiting';
+          break;
+        case 'run.approval.recorded':
+          statuses[nodeId] = event.decision === 'rejected' ? 'rejected' : 'succeeded';
+          break;
+      }
+    }
+
+    if (
+      Object.keys(statuses).length === 0 &&
+      selectedRun.status === 'running' &&
+      eventsQuery.data?.some((record) => record.event.type === 'run.started')
+    ) {
+      const targetNodeIds = new Set(edges.map((edge) => edge.target));
+      for (const node of nodes) {
+        if (!targetNodeIds.has(node.id)) {
+          statuses[node.id] = 'running';
+        }
+      }
+    }
+
+    setRunNodeStatuses(statuses);
+  }, [edges, eventsQuery.data, nodes, selectedRun, setRunNodeStatuses]);
   const lineageQuery = trpc.runs.lineage.useQuery(
     { id: selectedRun?.id ?? '00000000-0000-0000-0000-000000000000' },
     {
@@ -925,6 +977,12 @@ export function RunInspector() {
                         run={selectedRun}
                         events={eventsQuery.data}
                         lineage={lineageQuery.data}
+                        nodes={nodes}
+                        selectedNodeId={
+                          nodes.some((node) => node.id === selectedCanvasItem)
+                            ? selectedCanvasItem
+                            : null
+                        }
                         approvalBusy={approvalMut.isPending}
                         cancelBusy={cancelRunMut.isPending}
                         onApprove={

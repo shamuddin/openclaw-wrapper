@@ -21,9 +21,9 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
-    "@openclaw-wrapper/node-sdk": "workspace:*",
-    "@openclaw-wrapper/memory-sdk": "workspace:*",
     "@fastify/cors": "^11.2.0",
+    "@openclaw-wrapper/memory-sdk": "workspace:*",
+    "@openclaw-wrapper/node-sdk": "workspace:*",
     "@openclaw-wrapper/openclaw-client": "workspace:*",
     "@openclaw-wrapper/schemas": "workspace:*",
     "@sinclair/typebox": "^0.34.9",

@@ -11,6 +11,7 @@ import {
   saveChannelProfile,
   sendChannelProfileTest,
   startChannelProfilePairing,
+  testTranscriptApiProfile,
   waitForChannelProfilePairing,
 } from '../channel-profiles.js';
 import { router, workspaceProcedure } from '../trpc.js';
@@ -169,6 +170,17 @@ export const channelsRouter = router({
       requireWorkspaceRole(ctx, ['owner', 'admin'], 'Testing YouTube API profiles');
       try {
         return await testYouTubeProfile(ctx.db, input.id, ctx.workspace.id);
+      } catch (error) {
+        rethrowChannelError(error);
+      }
+    }),
+
+  testTranscriptApi: workspaceProcedure
+    .input(parse(ChannelProfileIdInput))
+    .mutation(async ({ ctx, input }) => {
+      requireWorkspaceRole(ctx, ['owner', 'admin'], 'Testing TranscriptAPI profiles');
+      try {
+        return await testTranscriptApiProfile(ctx.db, input.id, ctx.workspace.id);
       } catch (error) {
         rethrowChannelError(error);
       }

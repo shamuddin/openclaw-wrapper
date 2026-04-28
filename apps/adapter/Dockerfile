@@ -16,6 +16,7 @@ RUN pnpm --filter @openclaw-wrapper/adapter... build
 
 FROM node:25-alpine AS runtime
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+RUN apk add --no-cache python3 py3-pip && python3 -m pip install --break-system-packages youtube-transcript-api
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /repo/apps/adapter/dist ./dist
