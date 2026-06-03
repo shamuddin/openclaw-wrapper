@@ -17,11 +17,11 @@
   "dependencies": {
     "@openclaw-wrapper/schemas": "workspace:*",
     "@sinclair/typebox": "^0.34.9",
-    "ws": "^8.18.0"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@openclaw-wrapper/tsconfig": "workspace:*",
-    "@types/node": "^25.6.0",
+    "@types/node": "^25.9.1",
     "@types/ws": "^8.5.13",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
