@@ -1,4 +1,4 @@
-FROM node:25-alpine AS base
+FROM node:26-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 WORKDIR /repo
 
@@ -14,7 +14,7 @@ FROM deps AS build
 COPY . .
 RUN pnpm --filter @openclaw-wrapper/adapter... build
 
-FROM node:25-alpine AS runtime
+FROM node:26-alpine AS runtime
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 RUN apk add --no-cache python3 py3-pip && python3 -m pip install --break-system-packages youtube-transcript-api
 WORKDIR /app
