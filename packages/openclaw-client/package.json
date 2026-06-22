@@ -17,7 +17,7 @@
   "dependencies": {
     "@openclaw-wrapper/schemas": "workspace:*",
     "@sinclair/typebox": "^0.34.9",
-    "ws": "^8.18.0"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@openclaw-wrapper/tsconfig": "workspace:*",
